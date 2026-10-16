@@ -1,6 +1,6 @@
 # Roadmap detail
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-11 · **Change:** minor (PivotTable calculated fields) · **Target:** Microsoft Excel (Microsoft 365)
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-14 · **Change:** minor (Windows PostgreSQL ODBC imports and manual query refresh) · **Target:** Microsoft Excel (Microsoft 365)
 
 Forward-looking plan. The one-page summary is [`ROADMAP.md`](../ROADMAP.md); the ranked work
 list is [`gaps.md`](gaps.md); numbers and method are in
@@ -78,7 +78,7 @@ to check our files, and Windows machines with the reported GPU drivers.
 | M13 | Release & polish | releases shipping (v0.2.0–v0.4.0, signed) |
 | M14 | **Beta gates** (table above) | not started as a milestone; parts in open PRs |
 | M15 | Localization infrastructure and the twelve languages | started: ribbon catalog in ja, zh, ko, pt-BR, ru (#31, #104, #82); German in PR #163 |
-| M16 | Get & Transform, data model | not started |
+| M16 | Get & Transform, data model | partial: Windows PostgreSQL ODBC preview/load/manual refresh; query editor and data model remain |
 
 ## After beta (ranked)
 
@@ -112,6 +112,7 @@ to check our files, and Windows machines with the reported GPU drivers.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-14 | minor | Windows PostgreSQL ODBC preview/load/manual refresh; bounded jobs, literal data, volatile credentials and GridCraft XLSX source metadata |
 | 2026-10-11 | minor | PivotTable calculated fields landed |
 | 2026-10-10 | minor | Current focus and M15 updated for the 10-10 merges |
 | 2026-10-10 | minor | Added the alpha gate table (six core workflows; passes, stays alpha) |

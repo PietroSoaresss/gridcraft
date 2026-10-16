@@ -3,6 +3,42 @@
 
 pub(super) fn translate(text: &str) -> Option<&'static str> {
     Some(match text {
+        "From ODBC" => "De ODBC",
+        "From ODBC (PostgreSQL)" => "De ODBC (PostgreSQL)",
+        "Connections" => "Conexões",
+        "Queries & Connections" => "Consultas e Conexões",
+        "Refresh All" => "Atualizar Tudo",
+        "Data source (DSN)" => "Fonte de dados (DSN)",
+        "Connection string" => "String de conexão",
+        "User name" => "Nome de usuário",
+        "SQL query" => "Consulta SQL",
+        "Maximum rows" => "Máximo de linhas",
+        "Find data sources" => "Localizar fontes de dados",
+        "Choose a data source" => "Escolher uma fonte de dados",
+        "Test Connection" => "Testar Conexão",
+        "Preview (100 rows)" => "Visualizar (100 linhas)",
+        "Load as Table" => "Carregar como Tabela",
+        "Refresh Query" => "Atualizar Consulta",
+        "Replace locally edited query data" => "Substituir dados da consulta editados localmente",
+        "Query running…" => "Executando consulta…",
+        "Cancelling query…" => "Cancelando consulta…",
+        "Cancel Query" => "Cancelar Consulta",
+        "Connection succeeded" => "Conexão realizada",
+        "Query loaded" => "Consulta carregada",
+        "The row limit was reached. Increase the limit or restrict the SQL query." => {
+            "O limite de linhas foi atingido. Aumente o limite ou restrinja a consulta SQL."
+        }
+        "No data sources found. Configure a DSN or use a connection string." => {
+            "Nenhuma fonte encontrada. Configure um DSN ou use uma string de conexão."
+        }
+        "Query cancelled" => "Consulta cancelada",
+        "Refresh completed" => "Atualização concluída",
+        "Preview was limited to 100 rows." => "A visualização foi limitada a 100 linhas.",
+        "No ODBC queries in this workbook." => "Esta pasta de trabalho não tem consultas ODBC.",
+        "ODBC connections require the Windows desktop app." => "Conexões ODBC exigem o aplicativo desktop para Windows.",
+        "Credentials stay in this session. Install a matching PostgreSQL ODBC driver and use a read-only database account." => {
+            "As credenciais ficam nesta sessão. Instale um driver ODBC PostgreSQL compatível e use uma conta com acesso somente de leitura."
+        }
         "Paste" => "Colar",
         "Paste Values" => "Colar Valores",
         "Paste Formulas" => "Colar Fórmulas",
