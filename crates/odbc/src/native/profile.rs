@@ -48,7 +48,8 @@ impl Driver {
     fn options(self) -> &'static str {
         match self {
             Self::Postgres => {
-                "BoolsAsChar=0;ReadOnly=1;CommLog=0;Debug=0;ConnSettings={};UseDeclareFetch=1;Fetch=100;BI=-5;NumericAS=2;LFConversion=0;IgnoreTimeout=0;"
+                // psqlODBC's read-only flag blocks SET TRANSACTION too; the server enforces our read-only transaction.
+                "BoolsAsChar=0;ReadOnly=0;CommLog=0;Debug=0;ConnSettings={};UseDeclareFetch=1;Fetch=100;BI=-5;NumericAS=2;LFConversion=0;IgnoreTimeout=0;"
             }
             Self::SqlServer => "ApplicationIntent=ReadOnly;MARS_Connection=No;",
             Self::MySql => {
@@ -56,7 +57,7 @@ impl Driver {
             }
             Self::MariaDb => "OPTION=3145744;OPTIONS=3145744;INITSTMT={};NO_CACHE=1;FORWARDONLY=1;AUTO_RECONNECT=0;USE_MYCNF=0;CHARSET=utf8mb4;",
             Self::Oracle => "DBA=R;QTO=T;FBS=65536;BNF=F;BTD=F;FEN=F;EXC=F;MTS=T;",
-            Self::Sqlite => "NoCreat=1;StepAPI=1;NoTXN=0;NoWCHAR=0;LoadExt={};Timeout=15000;",
+            Self::Sqlite => "NoCreat=1;StepAPI=1;NoTXN=0;NoWCHAR=0;LoadExt=;Timeout=15000;",
         }
     }
 
@@ -212,8 +213,14 @@ pub(super) fn selector(attrs: &[(String, String)]) -> Result<(&str, &str), OdbcE
     Ok((key, value))
 }
 
-pub(super) fn connection_string(settings: &Settings, attrs: &[(String, String)], driver: Driver) -> String {
-    let escaped = |value: &str| format!("{{{}}}", value.replace('}', "}}"));
+pub(super) fn connection_string(settings: &Settings, attrs: &[(String, String)], driver: Driver) -> Result<String, OdbcError> {
+    let escaped = |value: &str| {
+        if value.starts_with('{') || value.trim() != value {
+            format!("{{{}}}", value.replace('}', "}}"))
+        } else {
+            odbc_api::escape_attribute_value(value).into_owned()
+        }
+    };
     let safety = driver.options();
     let mut credentials = String::new();
     if !settings.user.is_empty() {
@@ -234,18 +241,67 @@ pub(super) fn connection_string(settings: &Settings, attrs: &[(String, String)],
         }
         if key == "DSN" {
             value.push_str(&format!("DSN={entry};"));
+        } else if key == "DRIVER" {
+            value.push_str(&format!("DRIVER={{{}}};", entry.replace('}', "}}")));
         } else {
             value.push_str(&format!("{key}={};", escaped(entry)));
         }
     }
     value.push_str(&credentials);
     value.push_str(safety);
-    value
+    // SQLDriverConnectW takes a signed 16-bit length; odbc-api panics if it cannot convert it.
+    if value.encode_utf16().count() > i16::MAX as usize {
+        return Err(OdbcError::InvalidConnection);
+    }
+    Ok(value)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escaped_connections_fit_the_odbc_smallint_length() {
+        for password in ["x".repeat(16_384), "};".repeat(8192)] {
+            let settings = Settings { dsn: Some("Test".into()), password, ..Default::default() };
+            assert!(connection_string(&settings, &attributes(&settings).unwrap(), Driver::Postgres).is_err());
+        }
+        let settings = Settings { dsn: Some("Test".into()), password: "🦊".repeat(4096), ..Default::default() };
+        let value = connection_string(&settings, &attributes(&settings).unwrap(), Driver::Postgres).unwrap();
+        assert!(value.len() > i16::MAX as usize);
+        assert!(value.encode_utf16().count() <= i16::MAX as usize);
+    }
+
+    #[test]
+    fn credentials_keep_leading_braces_and_edge_spaces() {
+        for password in ["{pass}", " pass ", "{odbc};+test"] {
+            let settings = Settings { dsn: Some("Test".into()), password: password.into(), ..Default::default() };
+            let raw = connection_string(&settings, &attributes(&settings).unwrap(), Driver::Postgres).unwrap();
+            let parsed = attributes(&Settings { connection_string: Some(raw), ..Default::default() }).unwrap();
+            let passwords: Vec<_> = parsed.iter().filter(|(key, _)| key == "PWD").map(|(_, value)| value.as_str()).collect();
+            assert_eq!(passwords, [password, password]);
+        }
+    }
+
+    #[test]
+    fn ordinary_attributes_are_not_changed_into_braced_literals() {
+        let settings = Settings {
+            connection_string: Some("Driver={PostgreSQL Unicode(x64)};Servername=127.0.0.1;Port=55435;Database=postgres;SSLmode=disable".into()),
+            user: "gridcraft_reader".into(),
+            password: "test".into(),
+            ..Default::default()
+        };
+        let value = connection_string(&settings, &attributes(&settings).unwrap(), Driver::Postgres).unwrap();
+        for expected in ["UID=gridcraft_reader;", "PWD=test;", "SERVERNAME=127.0.0.1;", "PORT=55435;", "DATABASE=postgres;", "SSLMODE=disable;"] {
+            assert!(value.contains(expected), "missing {expected}");
+        }
+        assert!(value.contains("DRIVER={PostgreSQL Unicode(x64)};"));
+    }
+
+    #[test]
+    fn sqlite_disables_extensions_with_an_unquoted_empty_value() {
+        assert!(Driver::Sqlite.options().contains("LoadExt=;"));
+    }
 
     #[test]
     fn supported_drivers_have_database_specific_read_settings() {
@@ -280,7 +336,7 @@ mod tests {
         };
         let attrs = attributes(&connection).unwrap();
         assert_eq!(selector(&attrs).unwrap(), ("DRIVER", "MySQL ODBC 9.0 Unicode Driver"));
-        let value = connection_string(&connection, &attrs, Driver::MySql);
+        let value = connection_string(&connection, &attrs, Driver::MySql).unwrap();
         assert!(!value.contains("DELETE FROM t"));
         assert!(!value.contains("PASSWORD={old}"));
         assert!(value.contains("SSLCA={C:\\certs\\a;b.pem};"));
@@ -288,7 +344,7 @@ mod tests {
         assert!(value.contains("NO_CACHE=1;"));
         assert!(!value.contains("BoolsAsChar"));
         for driver in [Driver::SqlServer, Driver::Oracle, Driver::Sqlite, Driver::MariaDb] {
-            assert!(!connection_string(&connection, &attrs, driver).contains("BoolsAsChar"));
+            assert!(!connection_string(&connection, &attrs, driver).unwrap().contains("BoolsAsChar"));
         }
     }
 

@@ -13,7 +13,7 @@ cells and preserve query definitions; they cannot connect to a local ODBC driver
    with your server, database and SSL settings. Use a DSN name of at most 32 characters.
 3. Open **Data → From ODBC**, discover/select the DSN and enter your username and password.
    Alternatively, choose connection string and enter a string such as
-   `Driver={PostgreSQL Unicode(x64)};Server=localhost;Port=5432;Database=example;SSLmode=require;`.
+   `Driver={PostgreSQL Unicode(x64)};Servername=localhost;Port=5432;Database=example;SSLmode=require;`.
    The driver name must match a registered driver. Use separate credential fields.
 4. Enter a query, then **Test**, **Preview**, or **Load**. Loading creates a table in a new sheet.
 5. Use **Data → Connections** to preview or refresh a query table. **Refresh All** updates query
@@ -40,6 +40,8 @@ writes and SELECT INTO. This guard does not sandbox database functions or replac
 Queries execute without autocommit and the connection rolls back after reading. PostgreSQL and
 Oracle use `SET TRANSACTION READ ONLY`; MySQL/MariaDB use `START TRANSACTION READ ONLY`;
 SQLite uses [query_only](https://sqlite.org/pragma.html#pragma_query_only).
+PostgreSQL leaves the driver's `ReadOnly` flag off because psqlODBC otherwise rejects
+`SET TRANSACTION READ ONLY` itself. The server transaction enforces read-only execution.
 
 PostgreSQL queries are wrapped as a SELECT so TABLE/VALUES use cursor fetching. Other families
 receive the original statement, preserving their CTE, ORDER BY and alias syntax. PostgreSQL
@@ -83,6 +85,9 @@ Preview may return `truncated: true`. Loads and refreshes exceeding a row or siz
 without applying partial data; restrict the SQL or increase `maxRows`. Login timeout is 15 seconds and statement timeout is 60 seconds,
 subject to driver support. Cancellation prevents application immediately, but an in-flight
 native call may finish before the worker releases the connection.
+
+The final escaped connection string must fit ODBC's 32,767 UTF-16 code-unit limit, including
+driver options and credentials; oversized connections return an error before calling the driver.
 
 ## Refresh and persistence
 
@@ -158,9 +163,8 @@ cargo test -p gridcraft-odbc --test postgres -- --ignored
 ```
 
 `GRIDCRAFT_TEST_ODBC_CONNECTION_STRING` may replace the DSN. The integration test is ignored
-by default and never connects to a business database automatically. Native connection behavior
-still needs verification with registered drivers on the development machine. Adapter implementation
-and passing deterministic tests do not certify every server/driver combination.
+by default and never connects to a business database automatically. Local integration results
+are recorded below; they do not certify every server/driver combination.
 
 The other adapters have separate ignored integration tests with the same synthetic checks:
 
@@ -176,6 +180,33 @@ Replace `SQLSERVER` with `MYSQL`, `MARIADB`, `ORACLE` or `SQLITE` and the test f
 `_DSN`. SQLite requires an existing synthetic database file; the test never creates one.
 Tests cover connection, Unicode, literal text, exact large integers, NULLs, empty results,
 preview truncation, row overflow and cancellation. They create no server objects.
+
+### Local Windows validation — 2026-10-16
+
+These tests used installed 64-bit drivers and dedicated synthetic databases. PostgreSQL,
+MySQL and MariaDB used separate reader accounts. SQL Server used Windows authentication
+against a new LocalDB instance. Test servers were stopped and temporary LocalDB instances
+and PostgreSQL DSNs were removed afterward.
+
+| Database | Server / driver | Result |
+|---|---|---|
+| PostgreSQL | PostgreSQL 18.1 / psqlODBC Unicode 18.00 | Passed with both User DSN and connection string; server read-only transaction checked |
+| SQL Server | SQL Server 2025 LocalDB 17.0.1000.7 / Microsoft ODBC 18.7.1.1 | Passed with connection string and Windows authentication |
+| MySQL | MySQL Community 26.7.0 / Connector ODBC Unicode 26.7.1 | Passed with connection string and SELECT-only account |
+| MariaDB | MariaDB 13.0.2 / Connector ODBC 3.2.10 | Passed with connection string and SELECT-only account |
+| SQLite | SQLite3 ODBC driver 0.99991 / temporary database file | Passed with User DSN and connection string; DSN extension override checked |
+| Oracle | Instant Client ODBC 23.26.3 / Oracle Free 26ai binaries installed | Not validated: automatic database creation failed; retry requires Windows administrator confirmation |
+
+Real connections exposed two PostgreSQL issues: ordinary connection attributes must not be
+unconditionally braced, and the driver read-only flag conflicts with starting a read-only
+transaction. Regression tests also preserve passwords containing leading braces, separators
+and edge spaces. SQLite requires `LoadExt=`, because `LoadExt={}` blocks connection opening
+with driver 0.99991; a dedicated regression covers this wire format. Live PostgreSQL/MySQL/MariaDB tests used a synthetic password containing
+braces, a semicolon and a plus sign. Local validation does not cover remote TLS certificate
+validation, Azure SQL routing, Kerberos, production permissions or sustained large-result loads.
+PostgreSQL also passed separate live runs with `{pass}` and a password with edge spaces.
+An end-to-end CLI check imported a synthetic SQLite table through ODBC and saved XLSX;
+the saved XML preserved Unicode, literal `=1` text and the exact large integer without formulas.
 
 Driver option references: [MySQL connection parameters](https://dev.mysql.com/doc/connector-odbc/en/connector-odbc-configuration-connection-parameters.html),
 [MariaDB connection parameters](https://mariadb.com/docs/connectors/mariadb-connector-odbc/mariadb-connector-odbc-guide),

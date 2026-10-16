@@ -50,7 +50,8 @@ fn connect<'a>(env: &'a Environment, settings: &Settings) -> Result<(odbc_api::C
     };
     let driver = Driver::from_name(&description)?;
     let options = ConnectionOptions { login_timeout_sec: Some(15), ..Default::default() };
-    let connection = env.connect_with_connection_string(&profile::connection_string(settings, &attrs, driver), options).map_err(driver_error)?;
+    let connection_string = profile::connection_string(settings, &attrs, driver)?;
+    let connection = env.connect_with_connection_string(&connection_string, options).map_err(driver_error)?;
     if !driver.accepts(&connection.database_management_system_name().map_err(driver_error)?) {
         return Err(OdbcError::UnsupportedDatabase);
     }
@@ -205,15 +206,15 @@ mod tests {
     #[test]
     fn credentials_escape_braces_and_separators_without_quoting_the_dsn() {
         let settings = Settings { dsn: Some("Postgres".into()), user: "reader".into(), password: "{pass};+".into(), connection_string: None };
-        let value = profile::connection_string(&settings, &profile::attributes(&settings).unwrap(), Driver::Postgres);
-        assert!(value.contains("UID={reader};PWD={{pass}};+};DSN=Postgres;"));
-        assert!(value.starts_with("BoolsAsChar=0;ReadOnly=1;CommLog=0;Debug=0;ConnSettings={};"));
+        let value = profile::connection_string(&settings, &profile::attributes(&settings).unwrap(), Driver::Postgres).unwrap();
+        assert!(value.contains("UID=reader;PWD={{pass}};+};DSN=Postgres;"));
+        assert!(value.starts_with("BoolsAsChar=0;ReadOnly=0;CommLog=0;Debug=0;ConnSettings={};"));
         let unsafe_settings = Settings {
             connection_string: Some("Driver={PostgreSQL Unicode};CX=ff;A0=0;B2=1;B3=1;A6={DELETE FROM x};B6=0;BI=8;D6=8".into()),
             ..Default::default()
         };
-        let value = profile::connection_string(&unsafe_settings, &profile::attributes(&unsafe_settings).unwrap(), Driver::Postgres);
-        assert!(value.contains("D6={8};BoolsAsChar=0;ReadOnly=1;CommLog=0;Debug=0;ConnSettings={};"));
+        let value = profile::connection_string(&unsafe_settings, &profile::attributes(&unsafe_settings).unwrap(), Driver::Postgres).unwrap();
+        assert!(value.contains("D6=8;BoolsAsChar=0;ReadOnly=0;CommLog=0;Debug=0;ConnSettings={};"));
         assert!(value.ends_with("UseDeclareFetch=1;Fetch=100;BI=-5;NumericAS=2;LFConversion=0;IgnoreTimeout=0;"));
     }
 }

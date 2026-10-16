@@ -2,7 +2,7 @@
 
 **Stage: alpha** · next: beta, ~25 points of "ready for real work" and ~160–240 h away
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-15 · **Change:** minor (ODBC adapters for six database families) · **Target:** Microsoft Excel (Microsoft 365)
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-16 · **Change:** minor (native ODBC validation and connection fixes) · **Target:** Microsoft Excel (Microsoft 365)
 
 GridCraft aims at full Microsoft Excel parity, and at being better in places: faster, open (XLSX
 is the native format), fully scriptable by agents (MCP, control channel, CLI), and on the web.
@@ -130,6 +130,8 @@ Ranked; estimates in Opus 5.5 agent-hours. Detail and the full beta-gate list in
 
 ## Progress log
 
+- 2026-10-16: Five local ODBC driver integrations passed; fixed PostgreSQL connection/read-only startup and SQLite extension options ([validation](docs/odbc.md#local-windows-validation--2026-10-16)). Oracle verification remains pending.
+
 - 2026-10-14: Windows PostgreSQL ODBC preview/load/manual refresh, engine/CLI jobs and cached XLSX source definitions ([guide](docs/odbc.md)); registered-driver integration verification pending.
 
 | Date | What landed |
@@ -195,6 +197,7 @@ Ranked; estimates in Opus 5.5 agent-hours. Detail and the full beta-gate list in
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-16 | minor | Validate installed PostgreSQL, SQL Server, MySQL, MariaDB and SQLite drivers against synthetic local databases; fix PostgreSQL connection attributes/read-only startup and SQLite extension options; Oracle live validation remains pending |
 | 2026-10-15 | minor | Add ODBC adapters for SQL Server/Azure SQL, MySQL, MariaDB, Oracle and SQLite3; isolate driver options and read transactions; driver integration checks remain opt-in |
 | 2026-10-14 | minor | Windows PostgreSQL ODBC preview/load/manual refresh; bounded jobs, literal data, volatile credentials and GridCraft XLSX source metadata |
 | 2026-10-12 | minor | Rows auto-fit oversized fonts on open and whole-row/column formatting (#833); progress log row |
