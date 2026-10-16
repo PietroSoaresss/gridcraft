@@ -4,7 +4,6 @@
 pub(super) fn translate(text: &str) -> Option<&'static str> {
     Some(match text {
         "From ODBC" => "De ODBC",
-        "From ODBC (PostgreSQL)" => "De ODBC (PostgreSQL)",
         "Connections" => "Conexões",
         "Queries & Connections" => "Consultas e Conexões",
         "Refresh All" => "Atualizar Tudo",
@@ -36,8 +35,8 @@ pub(super) fn translate(text: &str) -> Option<&'static str> {
         "Preview was limited to 100 rows." => "A visualização foi limitada a 100 linhas.",
         "No ODBC queries in this workbook." => "Esta pasta de trabalho não tem consultas ODBC.",
         "ODBC connections require the Windows desktop app." => "Conexões ODBC exigem o aplicativo desktop para Windows.",
-        "Credentials stay in this session. Install a matching PostgreSQL ODBC driver and use a read-only database account." => {
-            "As credenciais ficam nesta sessão. Instale um driver ODBC PostgreSQL compatível e use uma conta com acesso somente de leitura."
+        "PostgreSQL, SQL Server, MySQL, MariaDB, Oracle and SQLite. Install a matching ODBC driver and use a read-only database account. Credentials stay in this session." => {
+            "PostgreSQL, SQL Server, MySQL, MariaDB, Oracle e SQLite. Instale um driver ODBC compatível e use uma conta com acesso somente de leitura. As credenciais ficam nesta sessão."
         }
         "Paste" => "Colar",
         "Paste Values" => "Colar Valores",

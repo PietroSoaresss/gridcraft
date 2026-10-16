@@ -41,7 +41,7 @@ pub(crate) fn dialog(app: &mut SheetApp, params: Json) -> Dialog {
     if let (Some(values), Some(params)) = (values.as_object_mut(), params.as_object()) {
         values.extend(params.iter().filter(|(k, _)| k.as_str() != "name").map(|(k, v)| (k.clone(), v.clone())));
     }
-    let mut dialog = Dialog::custom("odbc", "From ODBC (PostgreSQL)", values);
+    let mut dialog = Dialog::custom("odbc", "From ODBC", values);
     dialog.fields = vec![
         Field::Text { key: "dsn", label: "Data source (DSN)" },
         Field::Password { key: "connectionString", label: "Connection string" },
@@ -237,7 +237,7 @@ pub(crate) fn show(app: &mut SheetApp, ui: &mut Ui, dialog: &mut Dialog, open: &
     }
     ui.label(
         egui::RichText::new(
-            language.tr("Credentials stay in this session. Install a matching PostgreSQL ODBC driver and use a read-only database account."),
+            language.tr("PostgreSQL, SQL Server, MySQL, MariaDB, Oracle and SQLite. Install a matching ODBC driver and use a read-only database account. Credentials stay in this session."),
         )
         .small(),
     );

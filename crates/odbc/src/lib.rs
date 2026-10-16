@@ -178,9 +178,9 @@ pub enum OdbcError {
     QueryFailed,
     #[error("ODBC operation failed (SQLSTATE {0}). Check the driver, connection and query.")]
     DriverState(String),
-    #[error("This connector currently supports PostgreSQL ODBC drivers.")]
+    #[error("Use a supported PostgreSQL, SQL Server, MySQL, MariaDB, Oracle or SQLite3 ODBC driver.")]
     UnsupportedDatabase,
-    #[error("Use one SELECT, WITH, VALUES or TABLE query, without internal semicolons.")]
+    #[error("Use one SELECT, WITH, VALUES or TABLE query without internal semicolons, write/control keywords or executable comments.")]
     InvalidQuery,
     #[error("{0}")]
     Limit(&'static str),

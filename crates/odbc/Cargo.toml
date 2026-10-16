@@ -15,6 +15,7 @@ thiserror = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 odbc-api = { version = "29.2", default-features = false, features = ["odbc_version_3_80", "wide"] }
+sqlparser = { version = "0.63", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

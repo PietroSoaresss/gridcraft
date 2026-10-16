@@ -1,14 +1,15 @@
-# PostgreSQL through ODBC
+# Database imports through ODBC
 
-GridCraft can preview, load and manually refresh PostgreSQL query results on Windows.
+GridCraft provides Windows ODBC adapters for PostgreSQL, SQL Server (including Azure SQL),
+MySQL, MariaDB, Oracle and SQLite 3. They share preview, load and manual refresh commands.
 Desktop, CLI and MCP use the same engine commands. Other platforms can edit the saved
 cells and preserve query definitions; they cannot connect to a local ODBC driver yet.
 
 ## Setup and desktop workflow
 
-1. Install [psqlODBC](https://odbc.postgresql.org/) for the architecture of GridCraft
-   (usually 64 bit). The PostgreSQL server installer does not necessarily install this driver.
-2. In Windows **ODBC Data Sources (64-bit)**, create a PostgreSQL Unicode User or System DSN
+1. Install a supported ODBC driver for the architecture of GridCraft (usually 64 bit).
+   Database server installers do not necessarily install an ODBC driver.
+2. In Windows **ODBC Data Sources (64-bit)**, create a User or System DSN
    with your server, database and SSL settings. Use a DSN name of at most 32 characters.
 3. Open **Data → From ODBC**, discover/select the DSN and enter your username and password.
    Alternatively, choose connection string and enter a string such as
@@ -18,18 +19,42 @@ cells and preserve query definitions; they cannot connect to a local ODBC driver
 5. Use **Data → Connections** to preview or refresh a query table. **Refresh All** updates query
    tables before refreshing PivotTables. A failed query keeps its previous cells.
 
-Use a database account with only the required SELECT privileges. GridCraft executes queries
-in a PostgreSQL read-only transaction and rolls it back. It also forces driver read-only mode,
-disables driver communication/debug logs and clears connection initialization SQL. Driver options
-and SSL behavior are documented by [psqlODBC](https://odbc.postgresql.org/docs/config.html).
-Cursor fetching is forced with a 100-row driver cache; accepted SQL is wrapped as a SELECT so
-TABLE/VALUES also use that path. The byte limits below apply to GridCraft's materialized result;
-the native driver may allocate additional memory for its current page and large fields.
+The driver is identified from the registered DSN or the `Driver` connection-string attribute,
+then checked against the connected DBMS. MySQL and MariaDB drivers can connect to either server.
+Ambiguous selectors and file DSNs are rejected. Driver-specific options are isolated by family.
+
+| Database | Driver family | Read behavior / example query |
+|---|---|---|
+| PostgreSQL | [psqlODBC Unicode](https://odbc.postgresql.org/) | Read-only transaction, 100-row cursor cache; `SELECT 1 AS value` |
+| SQL Server / Azure SQL | [Microsoft ODBC Driver for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server) | Read intent and rollback; **SELECT-only account required**; `SELECT 1 AS value` |
+| MySQL | [MySQL Connector/ODBC Unicode](https://dev.mysql.com/doc/connector-odbc/en/) | Read-only transaction, forward streaming; `SELECT 1 AS value` |
+| MariaDB | [MariaDB Connector/ODBC 3.2+](https://mariadb.com/docs/connectors/mariadb-connector-odbc) | Read-only transaction, forward streaming; `SELECT 1 AS value` |
+| Oracle | [Oracle ODBC Driver](https://docs.oracle.com/en/database/oracle/oracle-database/19/adfns/odbc-driver.html) | Read-only connection and transaction; `SELECT 1 AS value FROM DUAL` |
+| SQLite 3 | [Christian Werner SQLite3 ODBC Driver](http://www.ch-werner.de/sqliteodbc/) | Existing database only, step fetching and `PRAGMA query_only=ON`; `SELECT 1 AS value` |
+
+Use an account with only the required SELECT privileges for every server database. SQL Server's
+read intent routes workloads; it does not deny writes. ODBC read-only attributes are also hints,
+not an authorization boundary ([ODBC specification](https://learn.microsoft.com/en-us/sql/odbc/reference/syntax/sqlsetconnectattr-function)).
+GridCraft rejects write/control keywords outside quoted values and identifiers, including CTE
+writes and SELECT INTO. This guard does not sandbox database functions or replace server permissions.
+Queries execute without autocommit and the connection rolls back after reading. PostgreSQL and
+Oracle use `SET TRANSACTION READ ONLY`; MySQL/MariaDB use `START TRANSACTION READ ONLY`;
+SQLite uses [query_only](https://sqlite.org/pragma.html#pragma_query_only).
+
+PostgreSQL queries are wrapped as a SELECT so TABLE/VALUES use cursor fetching. Other families
+receive the original statement, preserving their CTE, ORDER BY and alias syntax. PostgreSQL
+connection SQL and communication/debug logs, and MySQL/MariaDB initialization SQL are disabled.
+MySQL query logging is disabled; ODBC manager and other vendor tracing must be disabled separately. MySQL and
+MariaDB disable multiple statements, automatic reconnect and external option-file loading.
+The byte limits below apply to GridCraft's materialized result; native drivers may allocate
+additional memory for their current page and large fields. Drivers are installed separately;
+GridCraft does not bundle vendor binaries or configure server accounts.
 
 ## Queries, values and limits
 
-Queries must be one `SELECT`, `WITH`, `VALUES` or `TABLE` statement. One trailing semicolon is
-allowed; internal semicolons (including in literals/comments) are currently rejected.
+Queries must be one `SELECT`, `WITH`, `VALUES` or `TABLE` statement supported by the selected database. One trailing semicolon is
+allowed; internal semicolons (including in literals/comments) are currently rejected. Executable
+MySQL/MariaDB comments are rejected. Quote identifiers that coincide with blocked write keywords.
 Binary and unsupported ODBC column types return an error. Cast them explicitly to text if needed.
 
 | Value | Imported cell |
@@ -40,11 +65,17 @@ Binary and unsupported ODBC column types return an error. Cast them explicitly t
 | Larger integers/decimals | Exact text, preserving precision |
 | Floating point | Number; nonfinite values remain text |
 | Text, dates and timestamps | Text supplied by the driver |
+| GUID/UUID and SQL Server XML | Text |
+| SQL Server time/datetimeoffset | Text supplied by the driver, including offset when provided |
+
+Mapping follows ODBC metadata. A driver reporting SQL BOOLEAN as an integer produces numeric
+0/1 cells; GridCraft does not infer boolean types from integer values.
 
 Text beginning with `=` stays literal text. Date/time strings are not converted to spreadsheet
 serial dates. ODBC timestamp types may omit timezone information; select an explicit textual
 representation when preserving timezone/offset matters. Duplicate or empty column names are
 normalized into unique table headers. A query with zero rows still creates headers.
+SQLite expressions reported with unknown column metadata are preserved as text.
 
 Preview is capped at 100 rows and 2 MiB. Loads allow 1–100,000 rows (default 100,000),
 256 columns, 128 MiB of materialized storage including cell/row overhead, and 1 MiB per cell.
@@ -115,8 +146,9 @@ shell history; prefer a DSN with suitable authentication or a private parameter 
 ## Contributor checks
 
 Portable unit tests cover conversion/limits; deterministic engine/UI/CLI tests cover load,
-preview, refresh, cancellation, undo and credential redaction. The opt-in native integration
-test requires an installed driver and a synthetic PostgreSQL database:
+preview, refresh, cancellation, undo and credential redaction. Native profile tests cover driver
+selection, connection-string escaping, isolated options and dialect-aware query guards.
+The PostgreSQL integration test requires an installed driver and a synthetic database:
 
 ```powershell
 $env:GRIDCRAFT_TEST_ODBC_DSN = 'GridCraftTest'
@@ -127,4 +159,25 @@ cargo test -p gridcraft-odbc --test postgres -- --ignored
 
 `GRIDCRAFT_TEST_ODBC_CONNECTION_STRING` may replace the DSN. The integration test is ignored
 by default and never connects to a business database automatically. Native connection behavior
-still needs verification with a registered psqlODBC driver on the development machine.
+still needs verification with registered drivers on the development machine. Adapter implementation
+and passing deterministic tests do not certify every server/driver combination.
+
+The other adapters have separate ignored integration tests with the same synthetic checks:
+
+```powershell
+$env:GRIDCRAFT_TEST_ODBC_SQLSERVER_DSN = 'GridCraftSqlServerTest'
+$env:GRIDCRAFT_TEST_ODBC_SQLSERVER_USER = 'readonly_test_user'
+$env:GRIDCRAFT_TEST_ODBC_SQLSERVER_PASSWORD = '<test password>'
+cargo test -p gridcraft-odbc --test databases sql_server -- --ignored
+```
+
+Replace `SQLSERVER` with `MYSQL`, `MARIADB`, `ORACLE` or `SQLITE` and the test filter with
+`mysql`, `mariadb`, `oracle` or `sqlite`. Each prefix accepts `_CONNECTION_STRING` instead of
+`_DSN`. SQLite requires an existing synthetic database file; the test never creates one.
+Tests cover connection, Unicode, literal text, exact large integers, NULLs, empty results,
+preview truncation, row overflow and cancellation. They create no server objects.
+
+Driver option references: [MySQL connection parameters](https://dev.mysql.com/doc/connector-odbc/en/connector-odbc-configuration-connection-parameters.html),
+[MariaDB connection parameters](https://mariadb.com/docs/connectors/mariadb-connector-odbc/mariadb-connector-odbc-guide),
+[Oracle connection parameters](https://docs.oracle.com/en/database/oracle/oracle-database/19/adfns/odbc-driver.html),
+[SQL Server time mappings](https://learn.microsoft.com/en-us/sql/relational-databases/native-client-odbc-date-time/data-type-support-for-odbc-date-and-time-improvements).
