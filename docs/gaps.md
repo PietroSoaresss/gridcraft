@@ -169,6 +169,7 @@ No alpha blockers: every core workflow passes the [alpha gate](roadmap.md#alpha-
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-16 | minor | Validate Oracle Instant Client ODBC against Oracle Free; avoid conflicting driver transaction mode and preserve server-side read-only enforcement |
 | 2026-10-16 | minor | Validate installed PostgreSQL, SQL Server, MySQL, MariaDB and SQLite drivers against synthetic local databases; fix PostgreSQL connection attributes/read-only startup and SQLite extension options; Oracle live validation remains pending |
 | 2026-10-15 | minor | Add ODBC adapters for SQL Server/Azure SQL, MySQL, MariaDB, Oracle and SQLite3; isolate driver options and read transactions; driver integration checks remain opt-in |
 | 2026-10-14 | minor | Windows PostgreSQL ODBC preview/load/manual refresh; bounded jobs, literal data, volatile credentials and GridCraft XLSX source metadata |

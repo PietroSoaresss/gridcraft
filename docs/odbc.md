@@ -29,7 +29,7 @@ Ambiguous selectors and file DSNs are rejected. Driver-specific options are isol
 | SQL Server / Azure SQL | [Microsoft ODBC Driver for SQL Server](https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server) | Read intent and rollback; **SELECT-only account required**; `SELECT 1 AS value` |
 | MySQL | [MySQL Connector/ODBC Unicode](https://dev.mysql.com/doc/connector-odbc/en/) | Read-only transaction, forward streaming; `SELECT 1 AS value` |
 | MariaDB | [MariaDB Connector/ODBC 3.2+](https://mariadb.com/docs/connectors/mariadb-connector-odbc) | Read-only transaction, forward streaming; `SELECT 1 AS value` |
-| Oracle | [Oracle ODBC Driver](https://docs.oracle.com/en/database/oracle/oracle-database/19/adfns/odbc-driver.html) | Read-only connection and transaction; `SELECT 1 AS value FROM DUAL` |
+| Oracle | [Oracle ODBC Driver](https://docs.oracle.com/en/database/oracle/oracle-database/19/adfns/odbc-driver.html) | Server read-only transaction; `SELECT 1 AS value FROM DUAL` |
 | SQLite 3 | [Christian Werner SQLite3 ODBC Driver](http://www.ch-werner.de/sqliteodbc/) | Existing database only, step fetching and `PRAGMA query_only=ON`; `SELECT 1 AS value` |
 
 Use an account with only the required SELECT privileges for every server database. SQL Server's
@@ -41,7 +41,9 @@ Queries execute without autocommit and the connection rolls back after reading. 
 Oracle use `SET TRANSACTION READ ONLY`; MySQL/MariaDB use `START TRANSACTION READ ONLY`;
 SQLite uses [query_only](https://sqlite.org/pragma.html#pragma_query_only).
 PostgreSQL leaves the driver's `ReadOnly` flag off because psqlODBC otherwise rejects
-`SET TRANSACTION READ ONLY` itself. The server transaction enforces read-only execution.
+`SET TRANSACTION READ ONLY` itself. Oracle uses `DBA=W` because the Oracle driver starts a
+transaction for `DBA=R`, which conflicts with GridCraft's `SET TRANSACTION READ ONLY`; the
+server transaction remains the read-only enforcement boundary for both drivers.
 
 PostgreSQL queries are wrapped as a SELECT so TABLE/VALUES use cursor fetching. Other families
 receive the original statement, preserving their CTE, ORDER BY and alias syntax. PostgreSQL
@@ -195,16 +197,19 @@ and PostgreSQL DSNs were removed afterward.
 | MySQL | MySQL Community 26.7.0 / Connector ODBC Unicode 26.7.1 | Passed with connection string and SELECT-only account |
 | MariaDB | MariaDB 13.0.2 / Connector ODBC 3.2.10 | Passed with connection string and SELECT-only account |
 | SQLite | SQLite3 ODBC driver 0.99991 / temporary database file | Passed with User DSN and connection string; DSN extension override checked |
-| Oracle | Instant Client ODBC 23.26.3 / Oracle Free 26ai binaries installed | Not validated: automatic database creation failed; retry requires Windows administrator confirmation |
+| Oracle | Instant Client ODBC 23.26.3 / Oracle Free 26ai | Passed with connection string and SELECT-only account; server read-only transaction checked |
 
-Real connections exposed two PostgreSQL issues: ordinary connection attributes must not be
-unconditionally braced, and the driver read-only flag conflicts with starting a read-only
-transaction. Regression tests also preserve passwords containing leading braces, separators
+Real connections exposed Oracle transaction startup and two PostgreSQL issues. Ordinary
+connection attributes must not be unconditionally braced, and the driver read-only flag
+conflicts with starting a read-only transaction. Regression tests also preserve passwords
+containing leading braces, separators
 and edge spaces. SQLite requires `LoadExt=`, because `LoadExt={}` blocks connection opening
 with driver 0.99991; a dedicated regression covers this wire format. Live PostgreSQL/MySQL/MariaDB tests used a synthetic password containing
 braces, a semicolon and a plus sign. Local validation does not cover remote TLS certificate
 validation, Azure SQL routing, Kerberos, production permissions or sustained large-result loads.
-PostgreSQL also passed separate live runs with `{pass}` and a password with edge spaces.
+Oracle's `DBA=R` mode opened a driver transaction before the server read-only transaction;
+using `DBA=W` avoids the conflict while retaining the server-side read-only guard. PostgreSQL
+also passed separate live runs with `{pass}` and a password with edge spaces.
 An end-to-end CLI check imported a synthetic SQLite table through ODBC and saved XLSX;
 the saved XML preserved Unicode, literal `=1` text and the exact large integer without formulas.
 

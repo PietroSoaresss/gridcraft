@@ -56,7 +56,8 @@ impl Driver {
                 "OPTION=3145744;INITSTMT={};STMT={};NO_CACHE=1;FORWARD_CURSOR=1;MULTI_STATEMENTS=0;NO_TRANSACTIONS=0;AUTO_RECONNECT=0;LOG_QUERY=0;USE_MYCNF=0;CHARSET=utf8mb4;"
             }
             Self::MariaDb => "OPTION=3145744;OPTIONS=3145744;INITSTMT={};NO_CACHE=1;FORWARDONLY=1;AUTO_RECONNECT=0;USE_MYCNF=0;CHARSET=utf8mb4;",
-            Self::Oracle => "DBA=R;QTO=T;FBS=65536;BNF=F;BTD=F;FEN=F;EXC=F;MTS=T;",
+            // DBA=R starts a second read-only transaction in the driver, conflicting with SET TRANSACTION.
+            Self::Oracle => "DBA=W;QTO=T;FBS=65536;BNF=F;BTD=F;FEN=F;EXC=F;MTS=T;",
             Self::Sqlite => "NoCreat=1;StepAPI=1;NoTXN=0;NoWCHAR=0;LoadExt=;Timeout=15000;",
         }
     }
@@ -301,6 +302,15 @@ mod tests {
     #[test]
     fn sqlite_disables_extensions_with_an_unquoted_empty_value() {
         assert!(Driver::Sqlite.options().contains("LoadExt=;"));
+    }
+
+    #[test]
+    fn oracle_starts_read_only_transactions_without_a_conflicting_driver_mode() {
+        let settings = Settings { connection_string: Some("Driver={Oracle in instantclient_23_26};DBA=R".into()), ..Default::default() };
+        let value = connection_string(&settings, &attributes(&settings).unwrap(), Driver::Oracle).unwrap();
+        assert!(!value.contains("DBA=R;"));
+        assert!(value.starts_with("DBA=W;") && value.ends_with(Driver::Oracle.options()));
+        assert_eq!(Driver::Oracle.begin_sql(), Some("SET TRANSACTION READ ONLY"));
     }
 
     #[test]
