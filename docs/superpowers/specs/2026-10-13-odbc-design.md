@@ -4,6 +4,9 @@ Data: 2026-10-13. Estado em 2026-10-15: implementação e revisão concluídas;
 as oito etapas de `cargo xtask ci` passaram. Integração com driver psqlODBC real pendente.
 Base examinada: GridCraft 0.6.1, commit `84acf62`.
 
+> Este documento registra o desenho inicial, com PostgreSQL como primeiro adaptador. O estado
+> atual, as seis famílias suportadas e o fluxo para contribuir estão em [`odbc.md`](../../odbc.md).
+
 ## Objetivo e escopo
 
 O usuário quer buscar dados de bancos por ODBC, com uma experiência semelhante à

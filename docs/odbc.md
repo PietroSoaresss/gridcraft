@@ -152,6 +152,26 @@ shell history; prefer a DSN with suitable authentication or a private parameter 
 
 ## Contributor checks
 
+### Architecture and adding a database family
+
+The native connector in `crates/odbc` owns driver discovery, connection profiles, SQL guards,
+read-only transaction setup and ODBC value conversion. Database-specific selectors, options,
+test queries and transaction statements belong in `crates/odbc/src/native/profile.rs`; shared
+connection and result handling belongs in `crates/odbc/src/native.rs`. Keep vendor settings out
+of the UI.
+
+`crates/engine/src/odbc.rs` runs bounded jobs and coordinates cancellation. The commands in
+`crates/engine/src/cmd/odbc.rs` apply results through the engine's undoable edits. Desktop UI,
+CLI and MCP use those shared engine commands. Source definitions are persisted with workbook
+data, while passwords and arbitrary connection strings stay in memory and must be requested
+again after reopening.
+
+To add a database family, add its driver profile and dialect-specific safety/read behavior,
+cover driver detection, options and result types in the unit/profile tests, then add an
+ignored synthetic-database case to `crates/odbc/tests/databases.rs`. Update the supported-driver
+table and this guide when behavior or limitations change. Keep native driver dependencies out
+of WASM and leave credentials out of saved workbooks and logs.
+
 Portable unit tests cover conversion/limits; deterministic engine/UI/CLI tests cover load,
 preview, refresh, cancellation, undo and credential redaction. Native profile tests cover driver
 selection, connection-string escaping, isolated options and dialect-aware query guards.
