@@ -140,6 +140,10 @@ With no query tables, the existing synchronous PivotTable response is unchanged.
 
 ## CLI
 
+Both examples require the `Reporting` DSN with suitable authentication, including for the later
+refresh. Credentials entered in a desktop session stay in that session and are not available
+to a later CLI invocation.
+
 ```powershell
 gridcraft-cli run --cmd 'data.fromOdbc={"dsn":"Reporting","sql":"SELECT id, name FROM public.customers","maxRows":1000}' --out imported.xlsx
 gridcraft-cli run --in imported.xlsx --cmd 'data.refreshQuery={"table":"Query1"}' --out refreshed.xlsx

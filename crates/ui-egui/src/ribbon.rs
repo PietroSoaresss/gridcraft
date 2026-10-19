@@ -1894,7 +1894,7 @@ fn data(app: &mut SheetApp, ui: &mut Ui) {
         app.open_dialog("open", json!({}));
     }
     ui.vertical(|ui| {
-        if small_button(ui, Icon::Folder, "From ODBC", "From ODBC (PostgreSQL)", false).clicked() {
+        if small_button(ui, Icon::Folder, "From ODBC", "From ODBC", false).clicked() {
             app.open_dialog("odbc", json!({}));
         }
         if small_button(ui, Icon::Table, "Connections", "Queries & Connections", false).clicked() {
