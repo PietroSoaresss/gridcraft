@@ -407,6 +407,9 @@ impl SheetApp {
             return r;
         }
         let r = self.session.run(id, params);
+        if let Ok(result) = &r {
+            odbc::track_job(self, id, result);
+        }
         self.after_engine();
         // The new chart is selected, as after inserting any object, so Delete removes it, not its data.
         if id == "insert.chart"

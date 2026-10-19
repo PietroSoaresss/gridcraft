@@ -57,15 +57,20 @@ pub(crate) fn start(app: &mut SheetApp, action: &str, params: Json) -> Result<()
         return Err("Finish or cancel the current query first.".into());
     }
     let result = app.run(action, params)?;
-    app.odbc.error = None;
-    app.odbc.preview = None;
-    app.odbc.message.clear();
-    if let Some(id) = result.get("jobId").and_then(Json::as_str) {
-        app.odbc.job = Some(Job { id: id.into(), action: action.into(), cancel: false });
-    } else {
+    if result.get("jobId").and_then(Json::as_str).is_none() {
+        app.odbc.error = None;
+        app.odbc.preview = None;
         app.odbc.message = "Refresh completed".into();
     }
     Ok(())
+}
+
+pub(crate) fn track_job(app: &mut SheetApp, action: &str, result: &Json) {
+    let Some(id) = result.get("jobId").and_then(Json::as_str) else { return };
+    app.odbc.error = None;
+    app.odbc.preview = None;
+    app.odbc.message.clear();
+    app.odbc.job = Some(Job { id: id.into(), action: action.into(), cancel: false });
 }
 
 pub(crate) fn cancel(app: &mut SheetApp) {
