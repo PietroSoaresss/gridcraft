@@ -412,6 +412,7 @@ fn forecast_sheet(s: &mut Session, p: &Json) -> Result<Json> {
                 color: None,
                 secondary: false,
                 kind: (opts.column_chart && c >= 3).then_some(ChartKind::Line),
+                quartiles: Default::default(),
                 smooth: false,
                 trendlines: Vec::new(),
             })
