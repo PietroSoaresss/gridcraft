@@ -134,7 +134,7 @@ pub fn query(settings: &Settings, sql: &str, limits: Limits, preview: bool, canc
     let mut bytes = columns.iter().map(|c| c.name.len() + size_of::<Column>()).sum::<usize>();
     let mut truncated = false;
     let mut buffer = vec![0u16; limits.cell_bytes.saturating_add(1)];
-    while let Some(mut row) = cursor.next_row().map_err(|_| OdbcError::InvalidData)? {
+    while let Some(mut row) = cursor.next_row().map_err(driver_error)? {
         if cancelled.load(Ordering::Relaxed) {
             return Err(OdbcError::Cancelled);
         }
