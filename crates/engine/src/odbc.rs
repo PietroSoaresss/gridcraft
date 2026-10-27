@@ -2,7 +2,6 @@
 use gridcraft_odbc::{Backend, Connection, DataSet, Limits, NativeBackend, OdbcError};
 use serde::Serialize;
 use std::{
-    collections::HashMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -40,34 +39,17 @@ pub struct Request {
     pub connection: Connection,
     pub sql: String,
     pub limits: Limits,
-    pub table: Option<String>,
-    pub connection_ref: Option<String>,
-    pub replace: bool,
-    pub batch: Vec<Request>,
-}
-
-#[derive(Clone)]
-pub struct BatchItem {
-    pub request: Request,
-    pub data: Result<DataSet, String>,
-}
-
-enum Outcome {
-    Single(Option<DataSet>),
-    Batch(Vec<BatchItem>),
 }
 
 struct Job {
     info: JobInfo,
     request: Request,
     data: Option<DataSet>,
-    batch: Option<Vec<BatchItem>>,
     cancel: Arc<AtomicBool>,
 }
 
 pub struct OdbcManager {
     jobs: Arc<Mutex<Vec<Job>>>,
-    profiles: HashMap<(u64, String), Connection>,
     backend: Arc<dyn Backend>,
     next_id: u64,
 }
@@ -80,39 +62,24 @@ impl Default for OdbcManager {
 
 impl OdbcManager {
     pub fn new(backend: Arc<dyn Backend>) -> Self {
-        Self { jobs: Arc::new(Mutex::new(Vec::new())), profiles: HashMap::new(), backend, next_id: 1 }
+        Self { jobs: Arc::new(Mutex::new(Vec::new())), backend, next_id: 1 }
     }
 
     pub fn sources(&self) -> Result<gridcraft_odbc::Sources, OdbcError> {
         self.backend.sources()
     }
 
-    pub fn submit(&mut self, mut request: Request) -> Result<String, String> {
+    pub fn submit(&mut self, request: Request) -> Result<String, String> {
         if cfg!(target_arch = "wasm32") {
             return Err(OdbcError::Unavailable.to_string());
         }
         request.limits.validate().map_err(|e| e.to_string())?;
-        if request.kind == "refreshAll" {
-            if request.batch.is_empty() || request.batch.len() > 64 {
-                return Err("Refresh All supports at most 64 ODBC queries.".into());
-            }
-        } else {
-            request.connection.validate().map_err(|e| e.to_string())?;
-            if !matches!(request.kind.as_str(), "test" | "preview" | "load" | "refresh") || !request.batch.is_empty() {
-                return Err("Invalid ODBC operation.".into());
-            }
-            if request.kind != "test" {
-                gridcraft_odbc::validate_query(&request.sql).map_err(|e| e.to_string())?;
-            }
+        request.connection.validate().map_err(|e| e.to_string())?;
+        if !matches!(request.kind.as_str(), "test" | "preview" | "load") {
+            return Err("Invalid ODBC operation.".into());
         }
-        if request.kind == "load" && self.profiles.len() >= 64 {
-            return Err("At most 64 ODBC connections may be kept in this session.".into());
-        }
-        if matches!(request.kind.as_str(), "load" | "refresh") {
-            request.connection_ref = Some(connection_reference()?);
-        }
-        for item in &mut request.batch {
-            item.connection_ref = Some(connection_reference()?);
+        if request.kind != "test" {
+            gridcraft_odbc::validate_query(&request.sql).map_err(|e| e.to_string())?;
         }
         install_panic_redaction();
         let id = format!("odbc-{}", self.next_id);
@@ -138,7 +105,6 @@ impl OdbcManager {
                 },
                 request: request.clone(),
                 data: None,
-                batch: None,
                 cancel: cancel.clone(),
             });
         }
@@ -150,39 +116,15 @@ impl OdbcManager {
                 if cancel.load(Ordering::Relaxed) {
                     return Err(OdbcError::Cancelled);
                 }
-                if request.kind == "refreshAll" {
-                    let mut items = Vec::new();
-                    let mut remaining = gridcraft_odbc::MAX_BYTES;
-                    for item in &request.batch {
-                        if cancel.load(Ordering::Relaxed) {
-                            return Err(OdbcError::Cancelled);
-                        }
-                        let mut item = item.clone();
-                        item.limits.bytes = item.limits.bytes.min(remaining);
-                        let data = (|| {
-                            item.connection.validate()?;
-                            gridcraft_odbc::validate_query(&item.sql)?;
-                            item.limits.validate()?;
-                            let data = backend.query(&item.connection, &item.sql, item.limits, false, &cancel)?;
-                            if data.truncated {
-                                return Err(OdbcError::Limit("The result exceeds the row limit."));
-                            }
-                            remaining = remaining.saturating_sub(data.validate(item.limits)?);
-                            Ok::<_, OdbcError>(data)
-                        })()
-                        .map_err(|e| e.to_string());
-                        items.push(BatchItem { request: item, data });
-                    }
-                    Ok(Outcome::Batch(items))
-                } else if request.kind == "test" {
-                    backend.test(&request.connection).map(|_| Outcome::Single(None))
+                if request.kind == "test" {
+                    backend.test(&request.connection).map(|_| None)
                 } else {
                     let data = backend.query(&request.connection, &request.sql, request.limits, request.kind == "preview", &cancel)?;
                     if request.kind != "preview" && data.truncated {
                         return Err(OdbcError::Limit("The result exceeds the row limit."));
                     }
                     data.validate(request.limits)?;
-                    Ok(Outcome::Single(Some(data)))
+                    Ok(Some(data))
                 }
             }));
             let mut jobs = jobs.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -192,19 +134,14 @@ impl OdbcManager {
                 job.info.state = JobState::Cancelled;
             } else {
                 match result {
-                    Ok(Ok(Outcome::Single(Some(data)))) => {
+                    Ok(Ok(Some(data))) => {
                         job.info.rows = Some(data.rows.len());
                         job.info.columns = Some(data.columns.len());
                         job.info.truncated = data.truncated;
                         job.data = Some(data);
                         job.info.state = JobState::Ready;
                     }
-                    Ok(Ok(Outcome::Batch(items))) => {
-                        job.info.rows = Some(items.iter().filter_map(|item| item.data.as_ref().ok()).map(|d| d.rows.len()).sum());
-                        job.batch = Some(items);
-                        job.info.state = JobState::Ready;
-                    }
-                    Ok(Ok(Outcome::Single(None))) => job.info.state = JobState::Completed,
+                    Ok(Ok(None)) => job.info.state = JobState::Completed,
                     Ok(Err(OdbcError::Cancelled)) => job.info.state = JobState::Cancelled,
                     Ok(Err(error)) => {
                         job.info.state = JobState::Failed;
@@ -216,10 +153,7 @@ impl OdbcManager {
                     }
                 }
             }
-            // Credentials remain only in a successful load job until it is applied.
-            if job.info.state != JobState::Ready {
-                clear_request(&mut job.request);
-            }
+            clear_request(&mut job.request);
         });
         if spawn.is_err() {
             self.jobs.lock().unwrap_or_else(std::sync::PoisonError::into_inner).retain(|j| j.info.id != id);
@@ -239,7 +173,6 @@ impl OdbcManager {
         if job.info.state == JobState::Ready {
             job.info.state = JobState::Cancelled;
             job.data = None;
-            job.batch = None;
             clear_request(&mut job.request);
         }
         Ok(())
@@ -258,53 +191,20 @@ impl OdbcManager {
         Ok((data, job.request.clone()))
     }
 
-    pub fn complete(&mut self, id: &str, applied_tables: &[String]) {
+    pub fn complete(&mut self, id: &str) {
         let mut jobs = self.jobs.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(job) = jobs.iter_mut().find(|j| j.info.id == id) {
-            let requests = if job.request.kind == "refreshAll" { job.request.batch.as_slice() } else { std::slice::from_ref(&job.request) };
-            for request in requests.iter().filter(|r| matches!(r.kind.as_str(), "load" | "refresh")) {
-                if job.request.kind == "refreshAll" && !request.table.as_ref().is_some_and(|table| applied_tables.contains(table)) {
-                    continue;
-                }
-                let key = (request.uid, request.connection_ref.clone().unwrap_or_else(|| id.into()));
-                if self.profiles.len() < 64 || self.profiles.contains_key(&key) {
-                    self.profiles.insert(key, request.connection.clone());
-                }
-            }
             job.info.state = JobState::Completed;
             job.data = None;
-            job.batch = None;
             clear_request(&mut job.request);
         }
     }
 
-    pub fn profile(&self, uid: u64, id: &str) -> Option<Connection> {
-        self.profiles.get(&(uid, id.into())).cloned()
-    }
-
-    pub fn retain_profiles(&mut self, references: &std::collections::HashSet<(u64, String)>) {
-        self.profiles.retain(|key, _| references.contains(key));
-    }
-
-    pub fn ready_batch(&self, id: &str, uid: u64, revision: u64) -> Result<Vec<BatchItem>, String> {
-        let jobs = self.jobs.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let job = jobs.iter().find(|j| j.info.id == id).ok_or("ODBC job was not found.")?;
-        if job.info.state != JobState::Ready || job.cancel.load(Ordering::Relaxed) {
-            return Err("ODBC job is not ready.".into());
-        }
-        if job.request.uid != uid || job.request.revision != revision {
-            return Err("The workbook changed while querying; rerun Refresh All.".into());
-        }
-        job.batch.clone().ok_or_else(|| "This is not a Refresh All job.".into())
-    }
-
     pub fn discard_document(&mut self, uid: u64) {
-        self.profiles.retain(|(document, _), _| *document != uid);
         let mut jobs = self.jobs.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         for job in jobs.iter_mut().filter(|j| j.request.uid == uid) {
             job.cancel.store(true, Ordering::Relaxed);
             job.data = None;
-            job.batch = None;
             if job.info.state != JobState::Running {
                 job.info.state = JobState::Cancelled;
             }
@@ -316,19 +216,6 @@ impl OdbcManager {
 fn clear_request(request: &mut Request) {
     request.connection = Connection::default();
     request.sql.clear();
-    request.batch.clear();
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn connection_reference() -> Result<String, String> {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).map_err(|_| "Could not create an ODBC connection reference.".to_string())?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
-}
-
-#[cfg(target_arch = "wasm32")]
-fn connection_reference() -> Result<String, String> {
-    Err(OdbcError::Unavailable.to_string())
 }
 
 fn install_panic_redaction() {

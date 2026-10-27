@@ -9,7 +9,7 @@ description = "Bounded, toolkit-independent ODBC data imports"
 workspace = true
 
 [dependencies]
-gridcraft-core = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 

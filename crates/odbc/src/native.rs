@@ -6,14 +6,13 @@ use std::{
     },
 };
 
-use gridcraft_core::Value;
 use odbc_api::{
     ConnectionOptions, Cursor, DataType, Environment, ResultSetMetadata,
     buffers::Indicator,
     parameter::{VarCell, WideText},
 };
 
-use crate::{Column, ColumnKind, Connection as Settings, DataSet, Limits, OdbcError, Sources, decode};
+use crate::{Column, ColumnKind, Connection as Settings, DataSet, Limits, OdbcError, Sources, Value, decode};
 
 mod profile;
 use profile::Driver;
@@ -89,7 +88,9 @@ fn column_kind(driver: Driver, data_type: DataType) -> Result<ColumnKind, OdbcEr
         DataType::Numeric { .. } | DataType::Decimal { .. } => ColumnKind::Decimal,
         DataType::Float { .. } | DataType::Real | DataType::Double => ColumnKind::Float,
         DataType::Bit => ColumnKind::Boolean,
-        DataType::Date | DataType::Time { .. } | DataType::Timestamp { .. } => ColumnKind::Temporal,
+        DataType::Date => ColumnKind::Date,
+        DataType::Time { .. } => ColumnKind::Time,
+        DataType::Timestamp { .. } => ColumnKind::Timestamp,
         DataType::Char { .. }
         | DataType::WChar { .. }
         | DataType::Varchar { .. }
@@ -97,7 +98,8 @@ fn column_kind(driver: Driver, data_type: DataType) -> Result<ColumnKind, OdbcEr
         | DataType::LongVarchar { .. }
         | DataType::WLongVarchar { .. } => ColumnKind::Text,
         DataType::Other { data_type, .. } if data_type.0 == -11 => ColumnKind::Text, // SQL_GUID
-        DataType::Other { data_type, .. } if driver == Driver::SqlServer && matches!(data_type.0, -154 | -155) => ColumnKind::Temporal,
+        DataType::Other { data_type, .. } if driver == Driver::SqlServer && data_type.0 == -154 => ColumnKind::Time,
+        DataType::Other { data_type, .. } if driver == Driver::SqlServer && data_type.0 == -155 => ColumnKind::TimestampWithOffset,
         DataType::Other { data_type, .. } if driver == Driver::SqlServer && data_type.0 == -152 => ColumnKind::Text, // SQL_SS_XML
         DataType::Unknown if driver == Driver::Sqlite => ColumnKind::Text,
         _ => return Err(OdbcError::InvalidData),
@@ -190,9 +192,8 @@ mod tests {
     fn vendor_types_preserve_identifiers_offsets_and_binary_rejection() {
         let custom = |code| DataType::Other { data_type: odbc_api::sys::SqlDataType(code), column_size: None, decimal_digits: 0 };
         assert_eq!(column_kind(Driver::SqlServer, custom(-11)).unwrap(), ColumnKind::Text);
-        for code in [-154, -155] {
-            assert_eq!(column_kind(Driver::SqlServer, custom(code)).unwrap(), ColumnKind::Temporal);
-        }
+        assert_eq!(column_kind(Driver::SqlServer, custom(-154)).unwrap(), ColumnKind::Time);
+        assert_eq!(column_kind(Driver::SqlServer, custom(-155)).unwrap(), ColumnKind::TimestampWithOffset);
         assert_eq!(column_kind(Driver::SqlServer, custom(-152)).unwrap(), ColumnKind::Text);
         assert!(column_kind(Driver::Oracle, custom(-155)).is_err());
         assert_eq!(column_kind(Driver::Sqlite, DataType::Unknown).unwrap(), ColumnKind::Text);

@@ -27,17 +27,7 @@ pub(crate) fn dialog(app: &mut SheetApp, params: Json) -> Dialog {
         app.odbc.message.clear();
         app.odbc.error = None;
     }
-    let mut values = json!({"mode":"dsn", "dsn":"", "connectionString":"", "user":"", "password":"", "sql":"SELECT 1 AS value", "maxRows":100000, "replace":false});
-    if let Some(table) = params.get("table").and_then(Json::as_str) {
-        if let Ok(queries) = app.run("data.queriesConnections", json!({}))
-            && let Some(query) = queries.as_array().into_iter().flatten().find(|q| q["name"] == table).and_then(|q| q.get("query"))
-        {
-            values["dsn"] = query.get("dsn").filter(|d| d.is_string()).cloned().unwrap_or(json!(""));
-            values["sql"] = query.get("sql").cloned().unwrap_or(json!(""));
-            values["maxRows"] = query.get("maxRows").cloned().unwrap_or(json!(100000));
-        }
-        values["table"] = json!(table);
-    }
+    let mut values = json!({"mode":"dsn", "dsn":"", "connectionString":"", "user":"", "password":"", "sql":"SELECT 1 AS value", "maxRows":100000});
     if let (Some(values), Some(params)) = (values.as_object_mut(), params.as_object()) {
         values.extend(params.iter().filter(|(k, _)| k.as_str() != "name").map(|(k, v)| (k.clone(), v.clone())));
     }
@@ -56,12 +46,7 @@ pub(crate) fn start(app: &mut SheetApp, action: &str, params: Json) -> Result<()
     if app.odbc.job.is_some() {
         return Err("Finish or cancel the current query first.".into());
     }
-    let result = app.run(action, params)?;
-    if result.get("jobId").and_then(Json::as_str).is_none() {
-        app.odbc.error = None;
-        app.odbc.preview = None;
-        app.odbc.message = "Refresh completed".into();
-    }
+    app.run(action, params)?;
     Ok(())
 }
 
@@ -94,7 +79,7 @@ pub(crate) fn poll(app: &mut SheetApp, ctx: &egui::Context) {
                 Ok(result) if job.action == "data.odbcPreview" => app.odbc.preview = Some(result),
                 Ok(result) => {
                     app.odbc.message = "Query loaded".into();
-                    if matches!(job.action.as_str(), "data.fromOdbc" | "data.refreshQuery") {
+                    if job.action == "data.fromOdbc" {
                         app.dialog = None;
                     }
                     if let Some(errors) = result.get("errors").and_then(Json::as_array).filter(|e| !e.is_empty()) {
@@ -135,7 +120,8 @@ fn text(ui: &mut Ui, dialog: &mut Dialog, key: &str, label: &str, password: bool
     } else {
         egui::TextEdit::singleline(&mut value).password(password)
     };
-    let response = ui.add(edit.id(egui::Id::new(key)).desired_width(f32::INFINITY).char_limit(if key == "sql" { 1_000_000 } else { 16_384 }));
+    let response =
+        ui.add(edit.id(egui::Id::unique(("odbc", key))).desired_width(f32::INFINITY).char_limit(if key == "sql" { 1_000_000 } else { 16_384 }));
     response.labelled_by(label.id);
     dialog.values.insert(key.into(), json!(value));
 }
@@ -145,18 +131,12 @@ fn parameters(dialog: &Dialog) -> Json {
     let string_mode = params.get("mode").and_then(Json::as_str) == Some("connectionString");
     params.remove("mode");
     params.remove(if string_mode { "dsn" } else { "connectionString" });
-    if params.contains_key("table") {
-        params.retain(|key, value| {
-            !matches!(key.as_str(), "dsn" | "connectionString" | "user" | "password") || value.as_str().is_some_and(|s| !s.is_empty())
-        });
-    }
     Json::Object(params)
 }
 
 pub(crate) fn show(app: &mut SheetApp, ui: &mut Ui, dialog: &mut Dialog, open: &mut bool) {
     let language = app.ui.language;
     let busy = app.odbc.job.is_some();
-    let refresh = dialog.values.contains_key("table");
     let available = cfg!(target_os = "windows");
     if !available {
         ui.label(language.tr("ODBC connections require the Windows desktop app."));
@@ -184,7 +164,7 @@ pub(crate) fn show(app: &mut SheetApp, ui: &mut Ui, dialog: &mut Dialog, open: &
                     }
                 }
                 if !app.odbc.sources.is_empty() {
-                    egui::ComboBox::from_id_salt("odbc-dsn-list").selected_text(language.tr("Choose a data source")).show_ui(ui, |ui| {
+                    craft_ui::ComboBox::from_id_salt("odbc-dsn-list").selected_text(language.tr("Choose a data source")).show_ui(ui, |ui| {
                         for dsn in &app.odbc.sources {
                             if ui.selectable_label(false, dsn).clicked() {
                                 dialog.values.insert("dsn".into(), json!(dsn));
@@ -198,25 +178,18 @@ pub(crate) fn show(app: &mut SheetApp, ui: &mut Ui, dialog: &mut Dialog, open: &
         }
         text(ui, dialog, "user", "User name", false, false);
         text(ui, dialog, "password", "Password", true, false);
-        ui.add_enabled_ui(!refresh, |ui| text(ui, dialog, "sql", "SQL query", false, true));
+        text(ui, dialog, "sql", "SQL query", false, true);
         ui.horizontal(|ui| {
-            ui.label(language.tr("Maximum rows"));
+            let label = ui.label(language.tr("Maximum rows"));
             let mut rows = dialog.values.get("maxRows").and_then(Json::as_u64).unwrap_or(100000);
-            ui.add_enabled(!refresh, egui::DragValue::new(&mut rows).range(1..=100000));
+            ui.add(egui::DragValue::new(&mut rows).range(1..=100000)).labelled_by(label.id);
             dialog.values.insert("maxRows".into(), json!(rows));
         });
-        if refresh {
-            let mut replace = dialog.values.get("replace").and_then(Json::as_bool).unwrap_or(false);
-            ui.checkbox(&mut replace, language.tr("Replace locally edited query data"));
-            dialog.values.insert("replace".into(), json!(replace));
-        }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            for (label, action) in [
-                ("Test Connection", "data.odbcTest"),
-                ("Preview (100 rows)", "data.odbcPreview"),
-                (if refresh { "Refresh Query" } else { "Load as Table" }, if refresh { "data.refreshQuery" } else { "data.fromOdbc" }),
-            ] {
+            for (label, action) in
+                [("Test Connection", "data.odbcTest"), ("Preview (100 rows)", "data.odbcPreview"), ("Load as Table", "data.fromOdbc")]
+            {
                 if ui.button(language.tr(label)).clicked()
                     && let Err(error) = start(app, action, parameters(dialog))
                 {
@@ -273,37 +246,5 @@ fn preview_grid(ui: &mut Ui, data: &Json) {
     });
     if data["truncated"] == true {
         ui.label(crate::i18n::current(ui.ctx()).tr("Preview was limited to 100 rows."));
-    }
-}
-
-pub(crate) fn connections(app: &mut SheetApp, ui: &mut Ui) {
-    let language = app.ui.language;
-    let queries = app.run("data.queriesConnections", json!({})).unwrap_or(json!([]));
-    let mut count = 0;
-    for query in queries.as_array().into_iter().flatten().filter(|q| q["query"].is_object()) {
-        count += 1;
-        ui.horizontal(|ui| {
-            ui.label(format!("{} — {} ({})", query["name"].as_str().unwrap_or(""), query["sheet"].as_str().unwrap_or(""), query["rows"]));
-            if ui.add_enabled(app.odbc.job.is_none() && cfg!(target_os = "windows"), egui::Button::new(language.tr("Refresh Query"))).clicked() {
-                app.open_dialog("odbc", json!({"table": query["name"]}));
-            }
-        });
-    }
-    if count == 0 {
-        ui.label(language.tr("No ODBC queries in this workbook."));
-    }
-    if ui.add_enabled(app.odbc.job.is_none(), egui::Button::new(language.tr("Refresh All"))).clicked()
-        && let Err(error) = start(app, "data.refreshAll", json!({}))
-    {
-        app.odbc.error = Some(crate::clean_error(&error));
-    }
-    if app.odbc.job.is_some() {
-        ui.spinner();
-        if ui.button(language.tr("Cancel Query")).clicked() {
-            cancel(app);
-        }
-    }
-    if let Some(error) = &app.odbc.error {
-        ui.colored_label(Tokens::get(ui.ctx()).danger, error);
     }
 }

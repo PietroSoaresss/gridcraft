@@ -11,7 +11,25 @@ fn odbc_values_keep_text_null_boolean_and_numeric_types() {
     for kind in [ColumnKind::Integer, ColumnKind::Decimal, ColumnKind::Float] {
         assert!(decode(kind, "not a number").is_err());
     }
-    assert_eq!(decode(ColumnKind::Temporal, "2026-10-13 12:34:56.123456+03").unwrap(), Value::text("2026-10-13 12:34:56.123456+03"));
+}
+
+#[test]
+fn temporal_values_are_typed_and_preserve_fractional_seconds_and_offsets() {
+    let date = NaiveDate::from_ymd_opt(2024, 2, 29).unwrap();
+    let time = NaiveTime::from_hms_nano_opt(12, 34, 56, 123_456_789).unwrap();
+    assert_eq!(decode(ColumnKind::Date, "2024-02-29").unwrap(), Value::Date(date));
+    assert_eq!(decode(ColumnKind::Time, "12:34:56.123456789").unwrap(), Value::Time(time));
+    assert_eq!(decode(ColumnKind::Timestamp, "2024-02-29 12:34:56.123456789").unwrap(), Value::Timestamp(date.and_time(time)));
+    for text in ["2024-02-29 12:34:56.123456789 +03:00", "2024-02-29 12:34:56.123456789+03:00"] {
+        let Value::TimestampWithOffset(value) = decode(ColumnKind::TimestampWithOffset, text).unwrap() else { panic!("expected typed timestamp") };
+        assert_eq!(value.naive_local(), date.and_time(time));
+        assert_eq!(value.offset().local_minus_utc(), 10800);
+    }
+    for (kind, text) in [(ColumnKind::Date, "2023-02-29"), (ColumnKind::Time, "25:00:00"), (ColumnKind::Timestamp, "invalid")] {
+        assert!(decode(kind, text).is_err());
+    }
+    let value = Value::Timestamp(date.and_time(time));
+    assert_eq!(serde_json::from_str::<Value>(&serde_json::to_string(&value).unwrap()).unwrap(), value);
 }
 
 #[test]

@@ -1,7 +1,6 @@
 #![cfg(target_os = "windows")]
 //! Each ignored test needs its own dedicated database/driver; no server objects are created.
-use gridcraft_core::Value;
-use gridcraft_odbc::{Backend, Connection, Limits, NativeBackend, OdbcError};
+use gridcraft_odbc::{Backend, ColumnKind, Connection, Limits, NativeBackend, OdbcError, Value, decode};
 use std::sync::atomic::AtomicBool;
 
 fn read_database(name: &str, sql: &str, oracle: bool) {
@@ -29,6 +28,30 @@ fn read_database(name: &str, sql: &str, oracle: bool) {
     assert_eq!(data.rows[0][2], Value::text("ação 🦊"));
     assert_eq!(data.rows[0][3], Value::text("9007199254740993"));
     assert_eq!(data.rows[0][4], Value::Empty);
+    let temporal_sql = match name {
+        "SQLSERVER" => Some(
+            "SELECT CAST('2024-02-29' AS date), CAST('12:34:56.123456' AS time(6)), CAST('2024-02-29 12:34:56.123456' AS datetime2(6)), CAST('2024-02-29 12:34:56.123456 +03:00' AS datetimeoffset(6))",
+        ),
+        "MYSQL" | "MARIADB" => {
+            Some("SELECT CAST('2024-02-29' AS DATE), CAST('12:34:56.123456' AS TIME(6)), CAST('2024-02-29 12:34:56.123456' AS DATETIME(6))")
+        }
+        "ORACLE" => Some("SELECT TIMESTAMP '2024-02-29 12:34:56.123456' FROM DUAL"),
+        _ => None,
+    };
+    if let Some(sql) = temporal_sql {
+        let dates = backend.query(&connection, sql, Limits::default(), false, &cancel).unwrap();
+        let timestamp = decode(ColumnKind::Timestamp, "2024-02-29 12:34:56.123456").unwrap();
+        if oracle {
+            assert_eq!(dates.rows[0][0], timestamp);
+        } else {
+            assert_eq!(dates.rows[0][0], decode(ColumnKind::Date, "2024-02-29").unwrap());
+            assert_eq!(dates.rows[0][1], decode(ColumnKind::Time, "12:34:56.123456").unwrap());
+            assert_eq!(dates.rows[0][2], timestamp);
+            if name == "SQLSERVER" {
+                assert_eq!(dates.rows[0][3], decode(ColumnKind::TimestampWithOffset, "2024-02-29 12:34:56.123456 +03:00").unwrap());
+            }
+        }
+    }
     let from = if oracle { " FROM DUAL" } else { "" };
     let two_rows = format!("SELECT 1 AS value{from} UNION ALL SELECT 2 AS value{from}");
     let preview = backend.query(&connection, &two_rows, Limits { rows: 1, ..Default::default() }, true, &cancel).unwrap();

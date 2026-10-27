@@ -50,7 +50,7 @@ mod interactions {
             }
             Ok(DataSet {
                 columns: vec![Column { name: "Value".into(), kind: ColumnKind::Text }],
-                rows: vec![vec![gridcraft_engine::core::Value::text("=1")]],
+                rows: vec![vec![Value::text("=1")]],
                 truncated: false,
             })
         }
@@ -86,6 +86,7 @@ mod interactions {
         let mut harness = harness(database(false));
         harness.state_mut().open_dialog("odbc", json!({"dsn":"Postgres", "sql":"SELECT 1"}));
         harness.run_steps(4);
+        harness.check_accessibility();
         let before = harness.state().session.doc().unwrap().wb.clone();
         harness.get_by_label("Preview (100 rows)").click();
         harness.run_steps(4);
@@ -122,24 +123,19 @@ mod interactions {
     }
 
     #[test]
-    fn control_refresh_all_tracks_jobs_for_apply_and_cancel() {
+    fn control_load_tracks_jobs_for_apply_and_cancel() {
         for cancel in [false, true] {
-            let database = database(false);
+            let database = database(true);
             let mut harness = harness(database.clone());
-            harness.state_mut().open_dialog("odbc", json!({"dsn":"Postgres", "sql":"SELECT 1"}));
-            harness.run_steps(4);
-            harness.get_by_label("Load as Table").click();
-            harness.run_steps(4);
-            finish(&mut harness, |app| app.dialog.is_none());
-            harness.state_mut().run("cell.set", json!({"cell":"A2", "input":"local edit"})).unwrap();
-            harness.state_mut().open_dialog("queriesConnections", json!({}));
-            database.entered.store(false, Ordering::Release);
-            database.blocked.store(true, Ordering::Release);
+            harness.state_mut().open_dialog("odbc", json!({}));
             let context = harness.ctx.clone();
-            let control::Outcome::Done(response) =
-                control::handle(harness.state_mut(), &context, "engine.execute", &json!({"command":"data.refreshAll", "params":{"replace":true}}))
-            else {
-                panic!("expected a control response");
+            let control::Outcome::Done(response) = control::handle(
+                harness.state_mut(),
+                &context,
+                "engine.execute",
+                &json!({"command":"data.fromOdbc", "params":{"dsn":"Postgres", "sql":"SELECT 1"}}),
+            ) else {
+                panic!("expected control response")
             };
             assert_eq!(response["ok"], true);
             let id = response["result"]["jobId"].as_str().unwrap().to_string();
@@ -150,11 +146,7 @@ mod interactions {
             database.blocked.store(false, Ordering::Release);
             let expected = if cancel { gridcraft_engine::odbc::JobState::Cancelled } else { gridcraft_engine::odbc::JobState::Completed };
             finish(&mut harness, |app| app.session.odbc.status(&id).is_some_and(|job| job.state == expected));
-            let sheet = harness.state().session.doc().unwrap().wb.active().unwrap();
-            assert_eq!(
-                sheet.cell(gridcraft_engine::core::CellRef::new(1, 0)).unwrap().value,
-                gridcraft_engine::core::Value::text(if cancel { "local edit" } else { "=1" })
-            );
+            assert_eq!(harness.state().session.doc().unwrap().wb.sheets.len(), if cancel { 1 } else { 2 });
         }
     }
 

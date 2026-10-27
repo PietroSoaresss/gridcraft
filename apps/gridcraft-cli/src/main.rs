@@ -43,6 +43,8 @@ const USAGE: &str = "usage:
                      cached-value calc oracle + XLSX round-trip fidelity (exit 1 on any difference)
   gridcraft-cli run [--in FILE | --sample NAME] [--cmd 'id={json}']... [--script FILE.jsonl]
                      [--out FILE] [--print RANGE] [--quiet]
+                     a script line is id={json} or {\"command\": \"id\", \"params\": {…}};
+                     blank lines and lines starting with # or // are skipped
   gridcraft-cli commands [--json] [--search X]
   gridcraft-cli functions [--json] [--search X] [--category C]
   gridcraft-cli mcp [--connect PORT] [--in FILE | --sample NAME]
@@ -154,11 +156,11 @@ fn exec(s: &mut Session, id: &str, params: Value) -> Result<Value, String> {
     let mut r = s.execute_headless(id, params).map_err(|e| e.to_string());
     #[cfg(not(target_arch = "wasm32"))]
     #[allow(clippy::disallowed_methods)] // Native-only CLI polling uses a monotonic deadline.
-    if matches!(id, "data.fromOdbc" | "data.odbcPreview" | "data.odbcTest" | "data.refreshQuery" | "data.refreshAll")
+    if matches!(id, "data.fromOdbc" | "data.odbcPreview" | "data.odbcTest")
         && let Ok(result) = &r
         && let Some(job) = result.get("jobId").and_then(Value::as_str).map(str::to_string)
     {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(if id == "data.refreshAll" { 64 * 90 } else { 300 });
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
         r = loop {
             let status = s.execute_headless("data.odbcStatus", json!({"jobId":job})).map_err(|e| e.to_string())?;
             match status["state"].as_str().unwrap_or("") {
@@ -218,7 +220,18 @@ fn pretty(v: &Value) -> String {
 
 /// A number as a person would type it: `6`, `0.5`, `1e+300`.
 fn number_text(n: f64) -> String {
-    if n.fract() == 0.0 && n.abs() < 1e15 { format!("{}", n as i64) } else { format!("{n}") }
+    if n.fract() == 0.0 && n.abs() < 1e15 {
+        format!("{}", n as i64)
+    } else if n.is_finite() && (n.abs() >= 1e15 || n.abs() < 1e-5) {
+        // Rust's `Display` never uses exponent form; `{:e}` omits the `+` on positive exponents.
+        let s = format!("{n:e}");
+        match s.split_once('e') {
+            Some((m, e)) if !e.starts_with('-') => format!("{m}e+{e}"),
+            _ => s,
+        }
+    } else {
+        format!("{n}")
+    }
 }
 
 /// A computed value (as returned by `formulas.evaluate` / `sheet.read`) as plain text.
@@ -400,6 +413,17 @@ fn parse_command(text: &str) -> Result<Option<(String, Value)>, String> {
     }
     if t.starts_with('{') {
         let v: Value = serde_json::from_str(t).map_err(|e| format!("bad JSON: {e}"))?;
+        // A key this does not read is a mistake, not a comment: `{"command": …, "args": {…}}` and
+        // `{"command": …, "name": "Report"}` ran the command with no parameters at all and the
+        // script still exited 0, so a typo made a valid, wrong workbook (#2256).
+        if let Some(o) = v.as_object() {
+            let mut unknown: Vec<&str> = o.keys().map(String::as_str).filter(|k| !matches!(*k, "command" | "id" | "params")).collect();
+            if !unknown.is_empty() {
+                unknown.sort_unstable();
+                let (plural, list) = (if unknown.len() == 1 { "key" } else { "keys" }, unknown.join("`, `"));
+                return Err(format!("unknown {plural} `{list}`: a line is {{\"command\": \"id\", \"params\": {{…}}}}"));
+            }
+        }
         let id = v.get("command").or_else(|| v.get("id")).and_then(Value::as_str).ok_or("JSON command needs a `command` field")?;
         return Ok(Some((id.to_string(), v.get("params").cloned().unwrap_or_else(|| json!({})))));
     }
@@ -596,7 +620,7 @@ mod tests {
                 std::thread::sleep(std::time::Duration::from_millis(20));
                 Ok(DataSet {
                     columns: vec![Column { name: "Value".into(), kind: ColumnKind::Text }],
-                    rows: vec![vec![gridcraft_engine::core::Value::text("=1")]],
+                    rows: vec![vec![gridcraft_odbc::Value::text("=1")]],
                     truncated: false,
                 })
             }
@@ -622,12 +646,37 @@ mod tests {
         assert_eq!(parse_command("{\"command\":\"edit.redo\"}").unwrap(), Some(("edit.redo".into(), json!({}))));
         assert_eq!(parse_command("  # comment").unwrap(), None);
         assert!(parse_command("x={bad").is_err());
+        // A key this does not read is a mistake: the command used to run with no parameters and
+        // the script still exited 0, so a typo made a valid, wrong workbook (#2256).
+        for (line, named) in [
+            (r#"{"command":"home.insertSheet","args":{"name":"R"}}"#, "`args`"),
+            (r#"{"command":"home.insertSheet","name":"R"}"#, "`name`"),
+            (r#"{"command":"home.insertSheet","params":{},"note":"why"}"#, "`note`"),
+        ] {
+            let e = parse_command(line).expect_err("refused");
+            assert!(e.contains("unknown key") && e.contains(named), "{line}: {e}");
+            assert!(e.contains(r#"{"command": "id", "params": {…}}"#), "{line}: {e}");
+        }
+        // Several at once are listed in one message, sorted.
+        let e = parse_command(r#"{"command":"x","name":"R","args":{}}"#).expect_err("refused");
+        assert!(e.contains("unknown keys `args`, `name`"), "{e}");
+        // `id` is still the accepted alternative to `command`, and `params` still carries them.
+        assert_eq!(parse_command(r#"{"id":"edit.undo"}"#).unwrap(), Some(("edit.undo".into(), json!({}))));
+        assert_eq!(
+            parse_command(r#"{"command":"home.insertSheet","params":{"name":"R"}}"#).unwrap(),
+            Some(("home.insertSheet".into(), json!({"name": "R"})))
+        );
     }
 
     #[test]
     fn value_texts() {
         assert_eq!(value_text(&json!(6.0)), "6");
         assert_eq!(value_text(&json!(0.25)), "0.25");
+        assert_eq!(value_text(&json!(1e300)), "1e+300");
+        assert_eq!(value_text(&json!(-1.5e300)), "-1.5e+300");
+        assert_eq!(value_text(&json!(1e-20)), "1e-20");
+        assert_eq!(value_text(&json!(1e-300)), "1e-300");
+        assert_eq!(value_text(&json!(0.0001)), "0.0001");
         assert_eq!(value_text(&json!(true)), "TRUE");
         assert_eq!(value_text(&json!({"error": "#DIV/0!"})), "#DIV/0!");
         assert_eq!(value_text(&json!([[1.0, 2.0], [3.0, "x"]])), "1\t2\n3\tx");

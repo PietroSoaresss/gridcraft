@@ -1,7 +1,6 @@
 # Gaps
 
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-16 · **Change:** minor (native ODBC validation and connection fixes) · **Target:** Microsoft Excel (Microsoft 365)
-> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-20 · **Change:** minor (the Japanese catalog covers the dialogs, messages and menus) · **Target:** Microsoft Excel (Microsoft 365)
+> **Last reviewed:** 2026-10-11 · **Last updated:** 2026-10-27 · **Change:** minor (one-shot Windows ODBC imports; saved queries deferred to #431) · **Target:** Microsoft Excel (Microsoft 365)
 
 Every known shortfall against Excel, one entry each, ranked by user impact (what blocks someone
 using GridCraft for real work first). This is the work list: pick from the top, check the open
@@ -66,7 +65,7 @@ No alpha blockers: every core workflow passes the [alpha gate](roadmap.md#alpha-
   equality (#57, so `=0.1+0.2=0.3` is TRUE and MATCH and COUNTIF agree), spill updates after
   structural edits and cleared blockers (#133, #139; PRs #148, #157), 3-D span deletion (#140),
   and qualified names after a sheet rename (#134). Iterative calculation for circular references
-  landed too (no Options dialog yet, which is §13's).
+  landed too, with its settings in File › Options › Formulas.
 - **Impact:** wrong numbers are worse than missing features, so this entry is kept until the
   oracle suite of §15 can say the category is clear rather than only these five reports being so.
 - **Estimate:** — [function-parity.md](function-parity.md#formula-language)
@@ -85,7 +84,10 @@ No alpha blockers: every core workflow passes the [alpha gate](roadmap.md#alpha-
 ### 8. PivotTables: no slicers, calculated items, PivotCharts; unverified in Excel (F)
 - **Evidence:** `parity-checklist.md` missing `insert.slicer`, `insert.timeline`,
   `insert.pivotChart`, `table.insertSlicer`; calculated items and GETPIVOTDATA missing (calculated fields
-  and values on rows done).
+  and values on rows done). Show Details (double-click a value, subtotal or grand total cell) lists
+  its source records on a new sheet. The "Enable show details" option (`pivot.options`
+  `enableShowDetails`, saved as `enableDrill`) turns it off; it has no PivotTable Options dialog
+  yet (command only).
 - **Impact:** pivots are the analyst's main tool.
 - **Estimate:** 20–30 h for beta (25–40 h full).
 
@@ -111,8 +113,8 @@ No alpha blockers: every core workflow passes the [alpha gate](roadmap.md#alpha-
   100–165 h including #5. [localization-parity.md](localization-parity.md)
 
 ### 12. Get & Transform, external data, data model (F)
-- Windows multi-database ODBC preview/load/manual refresh is implemented ([odbc.md](odbc.md)).
-- No Power Query editor, From Web/folder sources, broader database connectors, relationships or
+- One-shot Windows ODBC database imports are available; no saved connections or ODBC refresh.
+- No Power Query editor, From Web/folder sources, relationships or
   data model (`data.fromWeb`, `data.relationships` missing). **Estimate:** 60–100 h.
 
 ### 13. Analysis tools: Solver, Analysis ToolPak, Forecast Sheet (F)
@@ -158,7 +160,9 @@ No alpha blockers: every core workflow passes the [alpha gate](roadmap.md#alpha-
   **Estimate:** 15–23 h.
 
 ### 20. Multiple windows; pen pressure (H)
-- One window (#162, PR #171); no pressure or tilt in ink. **Estimate:** 10–14 h.
+- Desktop windows done: a native window per workbook window, New Window on the same workbook,
+  Switch Windows, Arrange All. Left: Arrange All across monitors, one window on the web, no
+  pressure or tilt in ink. **Estimate:** 5–8 h.
   [hardware-parity.md](hardware-parity.md)
 
 ### 21. Automation and add-ins (F)
@@ -178,14 +182,16 @@ No alpha blockers: every core workflow passes the [alpha gate](roadmap.md#alpha-
 
 ## Revision history
 
+- 2026-10-27: One-shot ODBC import only; saved queries/refresh/XLSX extension preserved on a parked branch pending #431. See [ODBC guide](odbc.md).
+
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-16 | minor | Validate Oracle Instant Client ODBC against Oracle Free; avoid conflicting driver transaction mode and preserve server-side read-only enforcement |
-| 2026-10-16 | minor | Validate installed PostgreSQL, SQL Server, MySQL, MariaDB and SQLite drivers against synthetic local databases; fix PostgreSQL connection attributes/read-only startup and SQLite extension options; Oracle live validation remains pending |
-| 2026-10-15 | minor | Add ODBC adapters for SQL Server/Azure SQL, MySQL, MariaDB, Oracle and SQLite3; isolate driver options and read transactions; driver integration checks remain opt-in |
-| 2026-10-14 | minor | Windows PostgreSQL ODBC preview/load/manual refresh; bounded jobs, literal data, volatile credentials and GridCraft XLSX source metadata |
+| 2026-10-24 | minor | §8: PivotTable Enable show details: `pivot.options` `enableShowDetails` turns Show Details off for a PivotTable, read and written in XLSX as `enableDrill` |
+| 2026-10-23 | minor | §8: PivotTable Show Details: double-clicking a value cell lists its source records on a new sheet (#2364) |
+| 2026-10-22 | minor | §20: a native window per workbook window, New Window on the same workbook and Arrange All on the desktop; left: Arrange All across monitors, the web's one window, pen pressure (estimate 10–14 h → 5–8 h) |
 | 2026-10-20 | minor | §11: the Japanese catalog covers the dialogs, messages and menus — 943 keys (~43%), matching the pt-BR coverage; a test keeps the two catalogs in step |
 | 2026-10-17 | minor | §6: the five reports it tracked are closed and their PRs merged (#57, #133, #139, #140, #134; PRs #148, #155, #156, #157); the entry stays open for §15's oracle suite |
+| 2026-10-15 | minor | §6: Maximum Iterations and Maximum Change in File › Options › Formulas; dropped the stale "no Options dialog yet" |
 | 2026-10-15 | minor | §13: Solver prepares reports before committing the solution, model and report sheets together; report refusal preserves the workbook and Undo/Redo (#1050) |
 | 2026-10-13 | trivial | §4: multi-level category axes landed |
 | 2026-10-12 | minor | §9: next/previous sheet commands retain the current visible sheet and selection when there is no visible destination |

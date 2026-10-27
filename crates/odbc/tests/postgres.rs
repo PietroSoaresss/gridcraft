@@ -1,7 +1,6 @@
 #![cfg(target_os = "windows")]
 //! Opt in with a dedicated test connection; all queries use synthetic expressions.
-use gridcraft_core::Value;
-use gridcraft_odbc::{Backend, Connection, Limits, NativeBackend, OdbcError};
+use gridcraft_odbc::{Backend, ColumnKind, Connection, Limits, NativeBackend, OdbcError, Value, decode};
 use std::sync::atomic::AtomicBool;
 
 #[test]
@@ -36,9 +35,12 @@ fn postgres_psqlodbc_reads_types_unicode_precision_and_read_only_transactions() 
     assert_eq!(row[3], Value::Bool(true));
     assert_eq!(row[4], Value::text("=1"));
     assert_eq!(row[5], Value::text("ação 🦊"));
-    assert_eq!(row[6], Value::text("2026-10-14 12:34:56.123456"));
+    assert_eq!(row[6], decode(ColumnKind::Timestamp, "2026-10-14 12:34:56.123456").unwrap());
     assert_eq!(row[7], Value::Empty);
     assert_eq!(row[8], Value::Number(42.0));
+    let dates = backend.query(&connection, "SELECT date '2024-02-29', time '12:34:56.123456'", Limits::default(), false, &cancel).unwrap();
+    assert_eq!(dates.rows[0][0], decode(ColumnKind::Date, "2024-02-29").unwrap());
+    assert_eq!(dates.rows[0][1], decode(ColumnKind::Time, "12:34:56.123456").unwrap());
     let read_only = backend.query(&connection, "SELECT current_setting('transaction_read_only') AS mode", Limits::default(), false, &cancel).unwrap();
     assert_eq!(read_only.rows[0][0], Value::text("on"));
     let preview = backend.query(&connection, "SELECT generate_series(1,101) AS value", Limits::default(), true, &cancel).unwrap();

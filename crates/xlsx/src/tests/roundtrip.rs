@@ -340,7 +340,6 @@ fn sample() -> Workbook {
         ],
         table_type: None,
         connection_id: None,
-        query: None,
     });
     let png = b"\x89PNG\r\n\x1a\n0000IHDRfake".to_vec();
     s.images.push(Image {
@@ -430,6 +429,7 @@ fn sample() -> Workbook {
         ChartKind::Doughnut,
         ChartKind::Area,
         ChartKind::AreaStacked,
+        ChartKind::AreaStacked100,
         ChartKind::Scatter,
         ChartKind::ScatterLines,
         ChartKind::Bubble,
@@ -838,7 +838,6 @@ fn writing_repairs_invalid_models() {
         filter: vec![],
         table_type: None,
         connection_id: None,
-        query: None,
     });
     s.cells.set(at("B2"), Cell { value: Value::Number(1.0), formula: None, style: StyleId(9999) });
     let (back, _) = read_xlsx(&write_xlsx(&wb).unwrap()).unwrap();
@@ -1118,7 +1117,6 @@ fn table_newline_column_and_backslash_name_survive() {
         filter: vec![],
         table_type: None,
         connection_id: None,
-        query: None,
     });
     s.cells.set(at("D1"), Cell::formula(Formula::new("COUNTA(\\_Prime.1[Name])")));
     let (back, _) = read_xlsx(&write_xlsx(&wb).unwrap()).unwrap();
@@ -1162,7 +1160,6 @@ fn header_and_totals_table_without_data_row_survives() {
         filter: vec![],
         table_type: None,
         connection_id: None,
-        query: None,
     });
     let (back, report) = read_xlsx(&write_xlsx(&wb).unwrap()).unwrap();
     assert!(report.warnings.is_empty(), "{:?}", report.warnings);
@@ -1248,6 +1245,32 @@ fn default_font_survives_a_round_trip() {
     );
     let saved = write_xlsx(&read_xlsx(&file).unwrap().0).unwrap();
     assert_eq!(font0(&saved), (Some("12".into()), Some("Calibri".into()), Some("2".into()), Some("minor".into())));
+}
+
+/// Every font that follows the theme's body font keeps `<scheme val="minor"/>`, not only font 0,
+/// and a body-face font without the scheme does not gain one (#2517).
+#[test]
+fn minor_scheme_survives_on_every_font() {
+    let styles = r#"<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font><font><b/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/><scheme val="minor"/></font><font><i/><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font></fonts>
+        <fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>
+        <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
+        <cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>
+        <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>"#;
+    let rels = r#"<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>"#;
+    let body = r#"<sheetData><row r="1"><c r="A1" s="1"><v>1</v></c><c r="B1" s="2"><v>2</v></c></row></sheetData>"#;
+    let file = super::minimal(body, &[("xl/styles.xml", styles)], rels, "");
+    let saved = write_xlsx(&read_xlsx(&file).unwrap().0).unwrap();
+    let mut pkg = Package::open(&saved).unwrap();
+    let st = pkg.read_xml("xl/styles.xml").unwrap().unwrap();
+    let fonts: Vec<(bool, bool, Option<String>)> = st
+        .child("fonts")
+        .unwrap()
+        .kids("font")
+        .map(|f| (f.child("b").is_some(), f.child("i").is_some(), f.child("scheme").and_then(|e| e.attr("val")).map(str::to_string)))
+        .collect();
+    let scheme = |b: bool, i: bool| fonts.iter().find(|f| f.0 == b && f.1 == i).map(|f| f.2.clone());
+    assert_eq!(scheme(true, false), Some(Some("minor".into())), "{fonts:?}");
+    assert_eq!(scheme(false, true), Some(None), "{fonts:?}");
 }
 
 fn one_font_workbook(font: &str) -> Vec<u8> {

@@ -5,7 +5,7 @@
 
 use std::{fmt, mem::size_of, sync::atomic::AtomicBool};
 
-use gridcraft_core::Value;
+pub use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "windows")]
@@ -99,7 +99,29 @@ pub enum ColumnKind {
     Decimal,
     Float,
     Boolean,
-    Temporal,
+    Date,
+    Time,
+    Timestamp,
+    TimestampWithOffset,
+}
+
+/// Connector values are independent of workbook epochs, formats and formula semantics.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Value {
+    Empty,
+    Bool(bool),
+    Number(f64),
+    Text(String),
+    Date(NaiveDate),
+    Time(NaiveTime),
+    Timestamp(NaiveDateTime),
+    TimestampWithOffset(DateTime<FixedOffset>),
+}
+
+impl Value {
+    pub fn text(value: impl Into<String>) -> Self {
+        Self::Text(value.into())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,7 +162,7 @@ impl DataSet {
             bytes = bytes.checked_add(size_of::<Vec<Value>>()).ok_or(OdbcError::Limit("The result exceeds the supported size."))?;
             for value in row {
                 let size = match value {
-                    Value::Empty | Value::Bool(_) => 0,
+                    Value::Empty | Value::Bool(_) | Value::Date(_) | Value::Time(_) | Value::Timestamp(_) | Value::TimestampWithOffset(_) => 0,
                     Value::Number(n) if n.is_finite() => 0,
                     Value::Text(s) if s.len() <= limits.cell_bytes => s.len() + 2 * size_of::<usize>(),
                     Value::Text(_) => return Err(OdbcError::Limit("A result cell exceeds the supported size.")),
@@ -235,7 +257,15 @@ pub fn validate_query(sql: &str) -> Result<(), OdbcError> {
 pub fn decode(kind: ColumnKind, value: &str) -> Result<Value, OdbcError> {
     let exact = || Value::text(value);
     Ok(match kind {
-        ColumnKind::Text | ColumnKind::Temporal => exact(),
+        ColumnKind::Text => exact(),
+        ColumnKind::Date => Value::Date(value.parse().map_err(|_| OdbcError::InvalidData)?),
+        ColumnKind::Time => Value::Time(value.parse().map_err(|_| OdbcError::InvalidData)?),
+        ColumnKind::Timestamp => Value::Timestamp(NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f").map_err(|_| OdbcError::InvalidData)?),
+        ColumnKind::TimestampWithOffset => Value::TimestampWithOffset(
+            DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f %:z")
+                .or_else(|_| DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f%:z"))
+                .map_err(|_| OdbcError::InvalidData)?,
+        ),
         ColumnKind::Integer => {
             let number = value.parse::<i128>().map_err(|_| OdbcError::InvalidData)?;
             if number.unsigned_abs() < 1_000_000_000_000_000 { Value::Number(number as f64) } else { exact() }
