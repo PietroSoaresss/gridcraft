@@ -154,7 +154,7 @@ pub fn query(settings: &Settings, sql: &str, limits: Limits, preview: bool, canc
         let mut values = Vec::with_capacity(columns.len());
         for (i, column) in columns.iter().enumerate() {
             let mut cell = VarCell::<&mut [u16], WideText>::from_buffer(buffer.as_mut_slice(), Indicator::Null);
-            row.get_data((i + 1) as u16, &mut cell).map_err(|_| OdbcError::InvalidData)?;
+            row.get_data((i + 1) as u16, &mut cell).map_err(driver_error)?;
             if !cell.is_complete() {
                 return Err(OdbcError::Limit("A result cell exceeds the supported size."));
             }
