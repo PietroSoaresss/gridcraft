@@ -10,7 +10,7 @@ The engine runs one-shot ODBC jobs and imports ordinary tables through undoable
 commands. Desktop, CLI and MCP share Test/Preview/Load; SQL and connection settings
 are never stored with the workbook. See the [ODBC guide](odbc.md).
 
-> **Last reviewed:** 2026-10-10 · ** Last updated:** 2026-10-27 · **Change:** minor (standalone typed ODBC connector and one-shot imports) · **Target:** Microsoft Excel (Microsoft 365)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-27 · **Change:** minor (standalone typed ODBC connector and one-shot imports) · **Target:** Microsoft Excel (Microsoft 365)
 
 How GridCraft is built today. Rules for contributors are in [`AGENTS.md`](../AGENTS.md).
 
@@ -29,6 +29,7 @@ including tests, 2026-10-10.
 | L2 | `model` | ~2.2k | Workbook, sheets, copy-on-write cell store (64-row bands behind `Arc`), interned styles, names, tables, CF, validation, comments, charts, shapes, images, sparklines, print settings, protection |
 | L2 | `calc` | ~2.9k | Evaluator (references, names, tables, LET/LAMBDA, special forms like OFFSET/INDIRECT/SUBTOTAL) and dependency-graph recalculation with dynamic arrays, spills and cycle detection; single-threaded |
 | L2 | `xlsx` | ~10.7k | XLSX read/write (transitional and strict read), CSV/TSV, XLSB and ODS data import, PivotTable caches, DrawingML charts and drawings; byte slices only (WASM-safe); lenient reader that reports warnings |
+| L2 | `odbc` | ~1.2k | Toolkit-independent ODBC connector: driver discovery, bounded typed results (including dates/times), read-only query guards and transaction setup; no workbook persistence |
 | L2 | `pdf` | ~1k | Small PDF 1.7 writer (14 standard fonts, vectors, images) for print and export |
 | L3 | `chart` | ~2.9k | Toolkit-free chart layout to drawing primitives, a rasterizer, sparklines |
 | L5 | `engine` | ~17.7k | `Session`: open workbooks, selection, history (COW snapshots), clipboard, fill, sort, filter, PivotTables, what-if, print, file I/O (`io.rs`), and the command registry (`cmd/*`, 313 commands) with the Excel ribbon catalog (`catalog.rs`) |
@@ -158,6 +159,7 @@ rpm, tarball), FreeBSD, and web (WASM; WebGPU or WebGL2). Release workflows in
 
 ## Revision history
 
+- 2026-10-27: Align the ODBC layer inventory and correct documentation formatting.
 - 2026-10-27: Separate the typed ODBC connector from engine/UI and saved-query persistence pending #431.
 - 2026-10-27: One-shot Test/Preview/Load use ordinary tables; ODBC Refresh and its XLSX extension remain on the parked branch. See [ODBC guide](odbc.md).
 

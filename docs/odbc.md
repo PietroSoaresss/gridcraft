@@ -7,7 +7,7 @@ behavior, read-only protection, limits and adding another database family.
 
 ## Desktop
 
-1. Install a driver matching the architecture of GridCraft (usually 64 bit).
+1. Install a driver matching the architecture of GridCraft (usually 64-bit).
 2. Create a User or System DSN in **ODBC Data Sources (64-bit)**. DSN names must
    fit 32 UTF-16 code units. Use a database account with SELECT-only permissions.
 3. Open **Data → From ODBC**, select/discover a DSN, and enter credentials.
