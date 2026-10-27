@@ -39,7 +39,8 @@ including container overhead, and 1 MiB per text cell. Preview reads at most
 100 rows and may return `truncated`; full queries fail on overflow. Cancellation
 is checked between native reads. A blocking driver call may finish first.
 Arrow batches and unixODBC are follow-ups; this crate does not define saved
-queries, refresh or an XLSX extension. See upstream issue #431 for that model.
+queries, refresh or an XLSX extension. See
+[#431](https://github.com/storytold/gridcraft/issues/431) for that model.
 
 ## Drivers and safety
 
@@ -76,3 +77,8 @@ filter). SQLite requires an existing synthetic file. These tests create no
 server objects. Add a driver profile and synthetic integration case when adding
 a database family. Keep vendor settings out of engine/UI code and keep native
 dependencies out of WASM.
+
+On 2026-10-27, all 17 unit/profile tests passed and the revised native tests
+passed with local PostgreSQL and SQLite drivers. SQL Server, MySQL, MariaDB and
+Oracle servers were unavailable for this revision; earlier validation of the
+full implementation does not certify these revised temporal mappings.

@@ -1,6 +1,16 @@
 # Architecture
 
-> **Last reviewed:** 2026-10-10 · ** Last updated:** 2026-10-27 · **Change:** minor (one-shot Windows ODBC imports; saved queries deferred to #431) · **Target:** Microsoft Excel (Microsoft 365)
+`gridcraft-odbc` is an isolated L2 connector: connection settings and SQL produce
+bounded typed tables, including calendar dates/times. It owns driver safety and
+does not depend on the engine, UI or workbook persistence. See
+[`crates/odbc/README.md`](../crates/odbc/README.md). Saved query/refresh design is
+deferred to [#431](https://github.com/storytold/gridcraft/issues/431).
+
+The engine runs one-shot ODBC jobs and imports ordinary tables through undoable
+commands. Desktop, CLI and MCP share Test/Preview/Load; SQL and connection settings
+are never stored with the workbook. See the [ODBC guide](odbc.md).
+
+> **Last reviewed:** 2026-10-10 · ** Last updated:** 2026-10-27 · **Change:** minor (standalone typed ODBC connector and one-shot imports) · **Target:** Microsoft Excel (Microsoft 365)
 
 How GridCraft is built today. Rules for contributors are in [`AGENTS.md`](../AGENTS.md).
 
@@ -148,7 +158,8 @@ rpm, tarball), FreeBSD, and web (WASM; WebGPU or WebGL2). Release workflows in
 
 ## Revision history
 
-- 2026-10-27: One-shot ODBC import only; saved queries/refresh/XLSX extension preserved on a parked branch pending #431. See [ODBC guide](odbc.md).
+- 2026-10-27: Separate the typed ODBC connector from engine/UI and saved-query persistence pending #431.
+- 2026-10-27: One-shot Test/Preview/Load use ordinary tables; ODBC Refresh and its XLSX extension remain on the parked branch. See [ODBC guide](odbc.md).
 
 | Date | Change | Summary |
 |---|---|---|
