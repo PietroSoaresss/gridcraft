@@ -159,12 +159,11 @@ rpm, tarball), FreeBSD, and web (WASM; WebGPU or WebGL2). Release workflows in
 
 ## Revision history
 
-- 2026-10-27: Align the ODBC layer inventory and correct documentation formatting.
-- 2026-10-27: Separate the typed ODBC connector from engine/UI and saved-query persistence pending #431.
-- 2026-10-27: One-shot Test/Preview/Load use ordinary tables; ODBC Refresh and its XLSX extension remain on the parked branch. See [ODBC guide](odbc.md).
-
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-27 | minor | Align the ODBC layer inventory and correct documentation formatting. |
+| 2026-10-27 | minor | Separate the typed ODBC connector from engine/UI and saved-query persistence pending #431. |
+| 2026-10-27 | minor | One-shot Test/Preview/Load use ordinary tables; ODBC Refresh and its XLSX extension remain on the parked branch. See [ODBC guide](odbc.md). |
 | 2026-10-24 | minor | Engine building blocks for multi-command actions: undo groups, recording buffer, document trust, chunked hidden-name storage |
 | 2026-10-14 | minor | Document Undo's retained-cell-storage budget and latest-step guarantee |
 | 2026-10-10 | major | Created from the code on main: crates, layers, data flow, agent control, known gaps |

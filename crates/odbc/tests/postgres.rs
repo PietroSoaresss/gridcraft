@@ -57,4 +57,13 @@ fn postgres_psqlodbc_reads_types_unicode_precision_and_read_only_transactions() 
     assert!(matches!(backend.query(&connection, "SELECT 1; SELECT 2", Limits::default(), false, &cancel), Err(OdbcError::InvalidQuery)));
     let cancelled = AtomicBool::new(true);
     assert!(matches!(backend.query(&connection, "SELECT 1", Limits::default(), false, &cancelled), Err(OdbcError::Cancelled)));
+    // Fail beyond psqlODBC's first 100-row fetch so the error comes from next_row.
+    let fetch_error = backend.query(
+        &connection,
+        "SELECT 1 / CASE WHEN i = 201 THEN 0 ELSE 1 END AS value FROM generate_series(1,201) AS i",
+        Limits::default(),
+        false,
+        &cancel,
+    );
+    assert_eq!(fetch_error.unwrap_err(), OdbcError::DriverState("22012".into()));
 }
